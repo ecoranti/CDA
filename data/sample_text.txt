@@ -1,0 +1,3 @@
+Este es un texto de ejemplo para el Laboratorio 1 de Transmisión de Datos.
+Con este párrafo breve vamos a generar un flujo de bits a partir de caracteres,
+de manera que luego podamos evaluar histogramas, entropía y compresión con Huffman.
