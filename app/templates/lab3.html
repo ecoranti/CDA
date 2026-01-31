@@ -1,0 +1,436 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+  /* Custom tabs for Lab 3 since base.html doesn't have them */
+  .tabs {
+    display: flex;
+    border-bottom: 2px solid #e5e7eb;
+    margin-bottom: 20px;
+  }
+
+  .tab-btn {
+    padding: 10px 20px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 15px;
+    font-weight: 600;
+    color: #64748b;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+  }
+
+  .tab-btn.active {
+    color: #3b82f6;
+    border-bottom-color: #3b82f6;
+  }
+
+  .tab-btn:hover {
+    color: #1e40af;
+  }
+
+  .hidden {
+    display: none;
+  }
+
+  /* Metrics grid override */
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    text-align: center;
+  }
+
+  .metric-box {
+    background: #eff6ff;
+    border: 1px solid #dbeafe;
+    border-radius: 8px;
+    padding: 10px;
+  }
+
+  .metric-label {
+    font-size: 11px;
+    color: #3b82f6;
+    font-weight: bold;
+    text-transform: uppercase;
+  }
+
+  .metric-val {
+    font-size: 18px;
+    font-family: monospace;
+    color: #1e3a8a;
+    margin: 4px 0 0;
+  }
+</style>
+
+<div style="display: flex; justify-content: space-between; align-items: center;">
+  <h2>Laboratorio 3: Demodulación Digital</h2>
+  <a href="{{ url_for('index') }}" class="btn secondary">Ir al Inicio</a>
+</div>
+
+<div class="tabs">
+  <button class="tab-btn active" onclick="switchTab('interactive')" id="tab-interactive">Análisis Interactivo</button>
+  <button class="tab-btn" onclick="switchTab('ber')" id="tab-ber">Curva BER</button>
+</div>
+
+<!-- Tab: Analisis Interactivo -->
+<div id="content-interactive">
+  <div class="grid" style="grid-template-columns: 1fr 2fr;">
+
+    <!-- Controls -->
+    <div class="card">
+      <h3>Parámetros</h3>
+      <div class="field">
+        <label>Modulación</label>
+        <select id="i_mod">
+          <option value="QPSK" selected>QPSK</option>
+          <option value="BPSK">BPSK</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Eb/N0 (dB)</label>
+        <input type="number" id="i_ebn0" value="10.0" step="0.5">
+      </div>
+      <div class="field">
+        <label>SPS</label>
+        <input type="number" id="i_sps" value="8">
+      </div>
+      <div class="field">
+        <label>Roll-off (α)</label>
+        <input type="number" id="i_alpha" value="0.25" step="0.05">
+      </div>
+      <div class="field">
+        <label>Bits a Simular</label>
+        <input type="number" id="i_nbits" value="5000">
+      </div>
+
+      <details class="advanced" style="margin-top: 10px;" open>
+        <summary>Integración: Receptor (Lab 3) <-- Transmisor (Lab 2)</summary>
+
+            <div
+              style="margin: 10px 0; padding: 15px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px;">
+              <label style="display: flex; align-items: center; gap: 10px; font-weight: bold; cursor: pointer;">
+                <input type="checkbox" id="use_l2_results" onchange="toggleL2Mode()"
+                  style="width: auto; transform: scale(1.2);">
+                Utilizar Señal Transmitida por Lab 2
+              </label>
+              <p style="margin: 5px 0 0 26px; font-size: 0.9em; color: #166534;">
+                Carga directamente los archivos (iq.bin, params.json) generados en la última corrida del Lab 2.
+                La simulación demodulará esa señal exacta.
+              </p>
+              <div id="l2_info_box"
+                style="margin-top: 10px; margin-left: 26px; font-size: 0.85em; color: #555; display: none;">
+                Ruta detectada: <code id="l2_path_display">...</code>
+              </div>
+            </div>
+
+            <!-- Legacy / Manual Lab 1 integration (Hidden/Secondary if L2 is active) -->
+            <div id="manual_l1_integration"
+              style="opacity: 0.6; margin-top: 15px; border-top: 1px dashed #ccc; padding-top: 10px;">
+              <small><i>Opciones manuales (Solo si NO usas la integración directa de arriba)</i></small>
+              <div class="field" style="margin-top: 5px;">
+                <label>Fuente Lab 1</label>
+                <select id="l1_source">
+                  <option value="audio" selected>Audio</option>
+                  <option value="text">Texto</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Hidden inputs for Lab 1 params (kept for legacy support) -->
+            <input type="hidden" id="l1_audio" value="{{ defaults.audio }}">
+            <input type="hidden" id="l1_text" value="{{ defaults.text }}">
+            <input type="hidden" id="l1_fs" value="16000">
+            <input type="hidden" id="l1_nbits" value="8">
+            <input type="hidden" id="l1_quant" value="mulaw">
+            <input type="hidden" id="l1_method" value="scrambling">
+            <input type="hidden" id="l1_mu" value="255">
+            <input type="hidden" id="l1_lfsr_seed" value="0b1010110011">
+            <input type="hidden" id="l1_lfsr_taps" value="9,6">
+            <input type="hidden" id="l1_lfsr_bitwidth" value="10">
+
+            <script>
+              // LocalStorage Helper
+              function lsGet(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }
+
+              // Toggle logic
+              function toggleL2Mode() {
+                const chk = document.getElementById('use_l2_results');
+                const info = document.getElementById('l2_info_box');
+                const disp = document.getElementById('l2_path_display');
+
+                // Disable/Enable manual inputs
+                const manualInputs = ['i_mod', 'i_sps', 'i_alpha', 'i_nbits', 'l1_source'];
+                manualInputs.forEach(id => {
+                  const el = document.getElementById(id);
+                  if (el) el.disabled = chk.checked;
+                });
+                document.getElementById('manual_l1_integration').style.opacity = chk.checked ? '0.6' : '1';
+
+
+                if (chk.checked) {
+                  const l2 = lsGet('lab2_params', null);
+                  if (l2 && l2.out) {
+                    disp.innerText = l2.out;
+                    info.style.display = 'block';
+                  } else {
+                    disp.innerText = "No se encontraron resultados de Lab 2. Ejecuta Lab 2 primero.";
+                    info.style.display = 'block';
+                    chk.checked = false;
+                    alert("No hay resultados de Lab 2 guardados. Por favor ve al Lab 2 y ejecuta una simulación completa.");
+                    toggleL2Mode(); // revert
+                  }
+                } else {
+                  info.style.display = 'none';
+                }
+              }
+
+              // Auto-load Lab 1 Legacy (Just in case)
+              (function () {
+                const v = lsGet('lab1_params', null);
+                if (v) {
+                  if (v.audio) document.getElementById('l1_audio').value = v.audio;
+                  if (v.text) document.getElementById('l1_text').value = v.text;
+                  if (v.fs) document.getElementById('l1_fs').value = v.fs;
+                  if (v.n_bits) document.getElementById('l1_nbits').value = v.n_bits;
+                  if (v.quantizer) document.getElementById('l1_quant').value = v.quantizer;
+                  if (v.source) document.getElementById('l1_source').value = v.source;
+                  if (v.method) document.getElementById('l1_method').value = v.method;
+                  if (v.mu) document.getElementById('l1_mu').value = v.mu;
+                  if (v.lfsr_seed) document.getElementById('l1_lfsr_seed').value = v.lfsr_seed;
+                  if (v.lfsr_taps) document.getElementById('l1_lfsr_taps').value = v.lfsr_taps;
+                  if (v.lfsr_bitwidth) document.getElementById('l1_lfsr_bitwidth').value = v.lfsr_bitwidth;
+                }
+                // Initial call to set correct state
+                toggleL2Mode();
+              })();
+            </script>
+      </details>
+    </div>
+
+    <div style="flex: 1; display: flex; flex-direction: column;">
+      <!-- Metrics -->
+      <div id="metrics-panel" class="card hidden">
+        <div class="metrics-grid">
+          <div class="metric-box">
+            <div class="metric-label">Eb/N0</div>
+            <div class="metric-val" id="res-ebn0">-</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-label">BER</div>
+            <div class="metric-val" id="res-ber">-</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-label">Errores</div>
+            <div class="metric-val" id="res-errors">-</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-label">Bits</div>
+            <div class="metric-val" id="res-bits">-</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Graphs -->
+      <div id="graphs-panel" class="hidden">
+        <div class="grid">
+          <div class="card">
+            <h3>Diagrama de Ojo (Rx)</h3>
+            <img id="img-eye" src="" style="width:100%; border-radius:4px;">
+          </div>
+          <div class="card">
+            <h3>Constelación (Rx)</h3>
+            <img id="img-const" src="" style="width:100%; border-radius:4px;">
+          </div>
+        </div>
+        <div class="card" style="margin-top: 16px;">
+          <h3>Punto de Operación (BER vs Eb/N0)</h3>
+          <img id="img-ber-point" src="" style="width:100%; border-radius:4px;">
+        </div>
+        <div class="card" style="margin-top: 16px;">
+          <h3>Señal en Tiempo (Rx Filtrada)</h3>
+          <img id="img-time" src="" style="width:100%; border-radius:4px;">
+        </div>
+      </div>
+
+      <div id="loading-panel" class="hidden" style="text-align: center; padding: 40px;">
+        <div class="spinner" style="margin: 0 auto 10px;"></div>
+        <p class="muted">Simulando transmisión y recepción...</p>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="actions">
+    <input type="hidden" id="i_out" value="{{ defaults.out_lab3 }}">
+    <button class="btn" style="width: 100%; font-size: 1.1em; padding: 12px;" onclick="runInteractive()">Ejecutar
+      (Single Run)</button>
+  </div>
+</div>
+
+<!-- Tab: Curva BER -->
+<div id="content-ber" class="hidden">
+  <div class="card">
+    <h3>Generador de Curvas BER</h3>
+    <p class="muted">Ejecuta una simulación barriendo Eb/N0 para obtener la curva de rendimiento (Bit Error Rate).</p>
+
+    <form action="{{ url_for('lab3_run') }}" method="POST">
+      <div class="row">
+        <div class="field">
+          <label>Modulación</label>
+          <select name="modulation">
+            <option value="QPSK">QPSK</option>
+            <option value="BPSK">BPSK</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Bits Totales</label>
+          <input name="n_bits" type="number" value="50000">
+        </div>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label>Eb/N0 Inicial</label>
+          <input name="eb_start" type="number" value="0">
+        </div>
+        <div class="field">
+          <label>Eb/N0 Final</label>
+          <input name="eb_end" type="number" value="10">
+        </div>
+        <div class="field">
+          <label>Paso</label>
+          <input name="eb_step" type="number" value="1">
+        </div>
+      </div>
+
+      <!-- Hidden defaults -->
+      <input type="hidden" name="sps" value="8">
+      <input type="hidden" name="seed" value="42">
+      <input type="hidden" name="out" value="{{ defaults.out_lab3 }}">
+
+      <div style="margin-top: 16px;">
+        <button type="submit" class="btn" style="background: #10b981;">Generar Curva</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  function switchTab(tab) {
+    document.getElementById('content-interactive').classList.add('hidden');
+    document.getElementById('content-ber').classList.add('hidden');
+    document.getElementById('tab-interactive').classList.remove('active');
+    document.getElementById('tab-ber').classList.remove('active');
+
+    if (tab === 'interactive') {
+      document.getElementById('content-interactive').classList.remove('hidden');
+      document.getElementById('tab-interactive').classList.add('active');
+    } else {
+      document.getElementById('content-ber').classList.remove('hidden');
+      document.getElementById('tab-ber').classList.add('active');
+    }
+  }
+
+  async function runInteractive() {
+    const btn = document.querySelector('button[onclick="runInteractive()"]');
+    const loading = document.getElementById('loading-panel');
+    const graphs = document.getElementById('graphs-panel');
+    const metrics = document.getElementById('metrics-panel');
+    const chk = document.getElementById('use_l2_results');
+
+    btn.disabled = true;
+    btn.textContent = "Procesando...";
+    loading.classList.remove('hidden');
+    graphs.classList.add('hidden');
+    metrics.classList.add('hidden');
+
+    try {
+      let payload = {};
+
+      if (chk && chk.checked) {
+        // MODE A: File Integration
+        const l2 = JSON.parse(localStorage.getItem('lab2_params') || '{}');
+        if (!l2.out) throw new Error("No hay ruta de salida de Lab 2 guardada.");
+
+        payload = {
+          lab2_path: l2.out,
+          ebn0: parseFloat(document.getElementById('i_ebn0').value),
+          out: document.getElementById('i_out').value
+        };
+      } else {
+        // MODE B: Interactive / Parameter
+        payload = {
+          modulation: document.getElementById('i_mod').value,
+          ebn0: parseFloat(document.getElementById('i_ebn0').value),
+          sps: parseInt(document.getElementById('i_sps').value),
+          alpha: parseFloat(document.getElementById('i_alpha').value),
+          n_bits: parseInt(document.getElementById('i_nbits').value),
+          out: document.getElementById('i_out').value,
+          lab1: {
+            source: document.getElementById('l1_source').value,
+            audio: document.getElementById('l1_audio').value,
+            text: document.getElementById('l1_text').value,
+            fs: document.getElementById('l1_fs').value,
+            n_bits: document.getElementById('l1_nbits').value,
+            quantizer: document.getElementById('l1_quant').value,
+            method: document.getElementById('l1_method').value,
+            mu: document.getElementById('l1_mu').value,
+            lfsr_seed: document.getElementById('l1_lfsr_seed').value,
+            lfsr_taps: document.getElementById('l1_lfsr_taps').value,
+            lfsr_bitwidth: document.getElementById('l1_lfsr_bitwidth').value
+          }
+        };
+      }
+
+      const r = await fetch('/api/lab3/run_single', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await r.json();
+
+      if (!data.ok) throw new Error(data.error);
+
+      drawResults(data);
+
+    } catch (e) {
+      alert("Error: " + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Ejecutar (Single Run)";
+      loading.classList.add('hidden');
+    }
+  }
+
+  function drawResults(data) {
+    const graphs = document.getElementById('graphs-panel');
+    const metrics = document.getElementById('metrics-panel');
+
+    // Update Metrics
+    document.getElementById('res-ebn0').innerText = data.ebn0.toFixed(1) + ' dB';
+    document.getElementById('res-ber').innerText = data.ber.toExponential(2);
+    document.getElementById('res-errors').innerText = data.n_errors;
+    document.getElementById('res-bits').innerText = data.n_bits;
+
+    metrics.classList.remove('hidden');
+
+    // Update Images
+    if (data.paths.rx_eye_png) {
+      document.getElementById('img-eye').src = "/api/files?path=" + data.paths.rx_eye_png + "&t=" + Date.now();
+    }
+    if (data.paths.rx_constellation_png) {
+      document.getElementById('img-const').src = "/api/files?path=" + data.paths.rx_constellation_png + "&t=" + Date.now();
+    }
+    if (data.paths.ber_point_png) {
+      document.getElementById('img-ber-point').src = "/api/files?path=" + data.paths.ber_point_png + "&t=" + Date.now();
+    }
+    if (data.paths.rx_time_png) {
+      document.getElementById('img-time').src = "/api/files?path=" + data.paths.rx_time_png + "&t=" + Date.now();
+    }
+
+    graphs.classList.remove('hidden');
+  }
+</script>
+{% endblock %}
+```

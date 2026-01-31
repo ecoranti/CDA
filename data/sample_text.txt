@@ -1,3 +1,146 @@
-Este es un texto de ejemplo para el Laboratorio 1 de Transmisión de Datos.
-Con este párrafo breve vamos a generar un flujo de bits a partir de caracteres,
-de manera que luego podamos evaluar histogramas, entropía y compresión con Huffman.
+Eres un Arquitecto/Desarrollador Senior de Python + Qt (PySide6). Tu tarea es diseñar y construir una GUI de escritorio sobre una herramienta existente de Netskope SCIM/API escrita en Python. Debes producir código de alta calidad, escalable y mantenible, siguiendo el plan y criterios que detallo a continuación.
+
+Objetivo
+	•	Construir una aplicación de escritorio (PySide6/Qt6) estilo MVVM (Modelo–Vista–ViewModel) que:
+	•	Consuma mis módulos ya existentes (auth.py, users.py, groups.py, importer.py, export.py, etc.).
+	•	Soporte carga y navegación de hasta 300.000+ usuarios (SCIM) con UI fluida.
+	•	Permita búsqueda y filtros locales, importaciones masivas (CSV) con previsualización y validación, exportaciones, y gestión de grupos (ver, crear, editar, agregar/quitar miembros).
+	•	Incluya Login (tenant/token), Dashboard con KPIs, Jobs/cola de tareas con progreso/cancelación, Logs, y tema Light/Dark.
+
+Restricciones y lineamientos críticos
+	1.	PySide6 (Qt6) obligatorio. No usar frameworks web.
+	2.	No bloquear la UI: todas las tareas largas (descarga masiva SCIM, import/export, consultas grandes) deben ir en QThread/QThreadPool + QRunnable con señales progress, chunk, result, error.
+	3.	Modelo-Vista Qt: usar QAbstractTableModel + QTableView (virtualización por defecto), setUniformRowHeights(True), setSortingEnabled(True). Nada de listas custom pesadas.
+	4.	Sin pandas para todo: solo para previsualización CSV. El resto, estructuras nativas (list/dict) con índices auxiliares.
+	5.	Wrappers limpios: crear capa api/*.py que adapte mis módulos existentes (que a veces imprimen/menú) a funciones que devuelvan datos. Si un módulo actual “imprime”, agrega flags o funciones espejo que retornen JSON/dicts (no prints).
+	6.	No mezclar lógica de UI con negocio: UI llama a wrappers; wrappers llaman a mis módulos.
+	7.	Código listo para correr: sin “huecos”. Donde falte un detalle, dejar # TODO: bien documentado y una función/método stub invocable.
+	8.	Estilo y usabilidad:
+	•	Tema Light/Dark por .qss.
+	•	Atajos: Ctrl+F (buscar), Ctrl+R (recargar), Ctrl+E (exportar).
+	•	Barra de estado: progreso, contadores (X/Y descargado), latencia de última llamada.
+	•	Logs en panel + archivo (usa logging).
+	9.	Rendimiento:
+	•	Cargar usuarios en chunks (5–20k por iteración según límite SCIM).
+	•	Mantener índices locales para búsqueda por email, userName, name.givenName, name.familyName, etc.
+	•	Filtros tipo name:juan email:*@santander.com group:"Comercial" → predicados locales, no nuevas llamadas API.
+	10.	Seguridad: no serializar tokens en disco; mantenerlos en memoria.
+
+Entregables (formato y contenido)
+	1.	Árbol de archivos final propuesto asi que primero revisa todo el código y luego rearma este árbol.
+ns_gui/
+  app.py
+  core/
+    workers.py          # QRunnable/Signals genéricos
+    state.py            # AppState (tenant, token, contadores)
+    theme.py            # estilos, QSS loader
+  api/
+    auth_api.py
+    users_api.py
+    groups_api.py
+    import_api.py
+    export_api.py
+  models/
+    user.py             # DTO (pydantic o dataclass) opcional
+    group.py
+  ui/
+    main_window.py
+    views/
+      dashboard_view.py
+      jobs_view.py
+      users_view/
+        users_view.py
+        users_table_model.py
+        user_detail_panel.py
+      groups_view/
+        groups_view.py
+        groups_table_model.py
+        group_detail_panel.py
+    dialogs/
+      login_dialog.py
+      upload_csv_dialog.py
+      edit_user_dialog.py
+      create_user_dialog.py
+      assign_group_dialog.py
+      edit_group_dialog.py
+  utils/
+    filters.py          # parsea "name:juan email:*@dom"
+    csv_preview.py      # lectura/validación de CSV
+    formatters.py
+    validators.py
+  resources/
+    style.qss
+    icons/...
+
+
+2.	Wrappers api/*.py listos que conecten mis módulos reales. Si detectas firmas diferentes, adapta con el menor cambio intrusivo (o documenta exactamente qué flag/función debo agregar en mis módulos).
+	•	users_api.py (ejemplo esperado):
+	•	iter_users_chunks(page_size:int=5000) -> yield (chunk:list[dict], progress:int)
+	•	create_user(payload:dict) -> dict
+	•	update_user(user_id:str, payload:dict) -> dict
+	•	delete_user(user_id:str) -> dict
+	•	Normalizador a campos de la tabla: userName, name.givenName, name.familyName, email, active.
+	•	groups_api.py:
+	•	iter_groups_chunks(...), create_group(name), update_group(id,payload), delete_group(id),
+add_member(group_id,user_id), remove_member(group_id,user_id).
+	•	import_api.py:
+	•	simulate_users_import(plan) -> summary (usa importer.py con test_mode=True)
+	•	apply_users_import(plan) -> summary
+	•	export_api.py:
+	•	export_users_to_csv(path, filters) -> stats (en worker)
+	3.	UI funcional:
+	•	LoginDialog: tenant/token; devuelve credenciales; valida conectividad si es posible.
+	•	UsersView: toolbar (buscar, recargar, exportar, importar), tabla con QAbstractTableModel, detalle lateral, y acciones CRUD.
+	•	GroupsView: idem (ver, crear, editar, borrar, agregar/quitar miembros).
+	•	JobsView: lista de tareas en curso (título, progreso, estado, cancelar).
+	•	Dashboard: KPIs mínimos (#usuarios, #grupos, %activos, etc. con datos disponibles).
+	•	Búsqueda local con filters.py.
+	4.	Workers:
+	•	workers.py con Runnable genérico (Signals: progress:int, chunk:object, result:object, error:str, finished()).
+	•	Ejemplo: UsersView.load_users() crea Runnable con un generator del UsersAPI que yield {"chunk": [...]} y yield {"progress": 0..100}.
+	5.	Estilos y UX:
+	•	resources/style.qss con Light/Dark.
+	•	Íconos SVG básicos y layout agradable (sin overdesign).
+	6.	Tests manuales (instrucciones):
+	•	Cómo iniciar (python -m ns_gui.app).
+	•	Probar login, carga de usuarios por chunks, filtro por email:*@empresa.com, importación simulada con CSV de ejemplo (incluir muestra), export CSV.
+	7.	Notas de integración:
+	•	“Dónde enganchar” cada wrapper con mis funciones reales (indicar nombres esperados; si no existen, pedir agregar fetch_* que retornen JSON).
+	•	Lista de # TODO: puntuales (máximo 5, bien específicos).
+
+Descubrimiento de firmas y adaptación
+	•	Inspecciona mi base: detecta funciones en users.py, groups.py, importer.py, export.py, auth.py y extrae firmas.
+	•	Si ves funciones “de menú” que imprimen en lugar de devolver, no las uses en la GUI. En su lugar:
+	•	Propón fetch_users(startIndex:int=1, count:int=5000) -> dict,
+	•	count_users() -> int, create_user(payload) -> dict, etc.
+	•	Provee un shim en api/*.py para convivir hasta que yo lo ajuste en mi repo.
+	•	Documenta explícitamente qué debo agregar/cambiar si hace falta.
+
+Búsqueda y filtros (detalle)
+	•	filters.py debe convertir texto como:
+	•	name:juan email:*@santander.com group:"Comercial" active:true
+	•	a un predicado Python aplicado sobre el cache local (sin llamar API).
+	•	Soportar comodines * y comillas para frases.
+	•	Filtros por campos: userName, name.givenName, name.familyName, email, active, y opcionalmente grupos si ya se cargaron.
+
+Importación CSV
+	•	upload_csv_dialog.py:
+	•	Elegir archivo, previsualizar 1k–5k filas, validar encabezados requeridos (p. ej.: userName, name.givenName, name.familyName, emails[0].value]).
+	•	Simular usando import_api.py con test_mode=True; mostrar resumen: válidas/erroneas, errores por campo (tooltips).
+	•	Aplicar ejecuta import real (en worker), muestra progreso y resumen final.
+
+Export
+	•	Botón Export → export_api.py en worker.
+	•	Confirmación de ruta + filtros aplicados.
+
+Calidad de código
+	•	Comentarios claros, funciones pequeñas, typing hints, docstrings.
+	•	Manejo de errores con mensajes concretos en UI (y stack completo en log).
+	•	No usar librerías exóticas. Dependencias mínimas: PySide6, requests/httpx, pydantic (opcional), orjson (opcional), pandas solo para CSV preview.
+	•	Estructura consistente y fácil de extender.
+
+Entrega
+	•	Entrega todos los archivos listados en el árbol propuesto.
+	•	Cada archivo en un bloque de código con su ruta como título (por ejemplo, # ns_gui/ui/main_window.py).
+	•	Al final, incluye Checklist de verificación (runnable, login, carga, filtros, import, export, jobs, logs, tema light/dark).
+

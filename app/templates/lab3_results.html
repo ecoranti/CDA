@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+    <h2>Resultados Lab 3</h2>
+    <div style="display: flex; gap: 10px;">
+        <a href="{{ url_for('lab3_page') }}" class="btn secondary">Nueva Simulación</a>
+        <a href="{{ url_for('index') }}" class="btn secondary">Ir al Inicio</a>
+    </div>
+</div>
+
+<div class="grid" style="grid-template-columns: 2fr 1fr;">
+
+    <!-- Panel Principal: Gráfica BER -->
+    <div class="card">
+        <h3>Curva BER vs Eb/N0</h3>
+        {% if ber_plot %}
+        <div
+            style="text-align: center; border: 1px solid #e5e7eb; padding: 10px; border-radius: 8px; margin-bottom: 10px;">
+            <img src="{{ url_for('serve_fig', subpath=ber_plot|relative_path) }}" alt="Curva BER"
+                style="max-width: 100%; height: auto;">
+            <p class="text-xs text-gray-500 mt-2">DEBUG PATH: {{ ber_plot }}</p>
+            <p class="text-xs text-gray-500">DEBUG URL: {{ url_for('serve_fig', subpath=ber_plot|relative_path) }}</p>
+        </div>
+        <div style="text-align: center;">
+            <a href="{{ url_for('download', out=out, file=ber_plot|basename) }}" class="btn">Descargar Gráfico</a>
+        </div>
+        {% else %}
+        <div class="flash warning">
+            No se encontró el gráfico de BER. Revisa los logs.
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Panel Lateral: Archivos y Datos -->
+    <div class="card">
+        <h3>Archivos Generados</h3>
+        <ul style="list-style: none; padding: 0; margin: 0;">
+            {% if ber_csv %}
+            <li style="margin-bottom: 10px;">
+                <a href="{{ url_for('download', out=out, file=ber_csv|basename) }}"
+                    style="display: flex; align-items: center; gap: 8px; text-decoration: none; color: #2563eb;">
+                    <!-- CSV Icon -->
+                    <svg style="width: 20px; height: 20px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                        </path>
+                    </svg>
+                    <span>Resultados (CSV)</span>
+                </a>
+            </li>
+            {% endif %}
+
+            {% for f in other %}
+            <li style="margin-bottom: 10px;">
+                <a href="{{ url_for('download', out=out, file=f) }}"
+                    style="display: flex; align-items: center; gap: 8px; text-decoration: none; color: #4b5563;">
+                    <!-- Generic File Icon -->
+                    <svg style="width: 20px; height: 20px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z">
+                        </path>
+                    </svg>
+                    <span>{{ f }}</span>
+                </a>
+            </li>
+            {% endfor %}
+        </ul>
+
+        <div
+            style="margin-top: 20px; padding: 10px; background: #eff6ff; border-radius: 6px; font-size: 12px; color: #1e40af;">
+            <strong>Ubicación en disco:</strong><br>
+            <code style="word-break: break-all;">{{ out }}</code>
+        </div>
+    </div>
+</div>
+{% endblock %}

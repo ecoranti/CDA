@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="grid">
+  {% for st in stages %}
+  <div class="card">
+    <h3>{{ st.title }}</h3>
+    <p class="muted">{{ st.desc }}</p>
+    {% if st.link %}
+    <a class="btn" href="{{ st.link }}">Entrar</a>
+    {% else %}
+    <a class="btn secondary" href="#" title="Próximamente" onclick="return false;">Próximamente</a>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

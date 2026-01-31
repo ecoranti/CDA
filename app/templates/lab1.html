@@ -1,0 +1,149 @@
+{% extends 'base.html' %}
+{% block content %}
+  <h2>Formateo y Ecualización (Lab 1)</h2>
+  <form method="post" action="{{ url_for('lab1_run') }}">
+    <div class="row">
+      <div class="field">
+        <label>Audio WAV</label>
+        <input name="audio" value="{{ defaults.audio }}">
+      </div>
+      <div class="field">
+        <label>Texto</label>
+        <input name="text" value="{{ defaults.text }}">
+      </div>
+      <div class="field">
+        <label>Salida</label>
+        <input name="out" value="{{ defaults.out_lab1 }}">
+      </div>
+      <div class="field">
+        <label>Frecuencia fs [Hz]</label>
+        <input name="fs" type="number" value="16000">
+      </div>
+      <div class="field">
+        <label>Bits de cuantización</label>
+        <input name="n_bits" type="number" min="1" max="16" step="1" value="8">
+      </div>
+      <div class="field">
+        <label>Cuantizador</label>
+        <select name="quantizer">
+          <option value="mulaw" selected>µ-law</option>
+          <option value="uniform">Uniforme</option>
+          <option value="both">Ambos</option>
+        </select>
+      </div>
+      <details class="advanced">
+        <summary>Avanzado</summary>
+        <div class="row">
+          <div class="field">
+            <label title="Parámetro µ del companding µ-law (típico 255)">µ (solo µ-law) <span class="badge">def=255</span></label>
+            <input name="mu" type="number" min="1" value="255">
+          </div>
+          <div class="field">
+            <label title="Semilla del LFSR usada en el scrambling (acepta 0b/0x/decimal)">LFSR seed <span class="badge">0b1010110011</span></label>
+            <input name="lfsr_seed" value="0b1010110011">
+          </div>
+          <div class="field">
+            <label title="Taps del LFSR separados por coma (posición de bits)">LFSR taps (coma) <span class="badge">9,6</span></label>
+            <input name="lfsr_taps" value="9,6">
+          </div>
+          <div class="field">
+            <label title="Ancho del registro del LFSR (1–32)">LFSR bitwidth <span class="badge">1–32</span></label>
+            <input name="lfsr_bitwidth" type="number" min="1" max="32" value="10">
+          </div>
+          <div class="field">
+            <label title="Cantidad de bins para el histograma de amplitudes de la señal de audio">Bins hist amplitud A <span class="badge">def=50</span></label>
+            <input name="hist_bins" type="number" min="1" value="50">
+          </div>
+          <div class="field">
+            <label title="Paso (en bits) para calcular la evolución de entropía de la Fuente A">Entropía step A <span class="badge">def=10000</span></label>
+            <input name="entropy_step_a" type="number" min="1" value="10000">
+          </div>
+          <div class="field">
+            <label title="Paso (en bits) para calcular la evolución de entropía de la Fuente B (texto)">Entropía step B <span class="badge">def=500</span></label>
+            <input name="entropy_step_b" type="number" min="1" value="500">
+          </div>
+          <div class="field">
+            <label title="Conjunto de µ a evaluar en gráficos SQNR/MSE (separados por coma)">µ para SQNR/MSE <span class="badge">def=1,25,50,100,255</span></label>
+            <input name="sqnr_mus" value="1,25,50,100,255">
+          </div>
+        </div>
+      </details>
+    </div>
+    <button class="btn" type="submit">Ejecutar</button>
+    <button class="btn secondary" type="button" onclick="presetLab1()">Valores típicos</button>
+    <a class="btn secondary" href="{{ url_for('index') }}">Menú principal</a>
+  </form>
+  <script>
+    function presetLab1(){
+      const fs = document.querySelector('input[name="fs"]');
+      const nb = document.querySelector('input[name="n_bits"]');
+      const q = document.querySelector('select[name="quantizer"]');
+      const mu = document.querySelector('input[name="mu"]');
+      const seed = document.querySelector('input[name="lfsr_seed"]');
+      const taps = document.querySelector('input[name="lfsr_taps"]');
+      const bw = document.querySelector('input[name="lfsr_bitwidth"]');
+      const bins = document.querySelector('input[name="hist_bins"]');
+      const ea = document.querySelector('input[name="entropy_step_a"]');
+      const eb = document.querySelector('input[name="entropy_step_b"]');
+      const sm = document.querySelector('input[name="sqnr_mus"]');
+      if (fs) fs.value = 16000;
+      if (nb) nb.value = 8;
+      if (q) q.value = 'mulaw';
+      if (mu) mu.value = 255;
+      if (seed) seed.value = '0b1010110011';
+      if (taps) taps.value = '9,6';
+      if (bw) bw.value = 10;
+      if (bins) bins.value = 50;
+      if (ea) ea.value = 10000;
+      if (eb) eb.value = 500;
+      if (sm) sm.value = '1,25,50,100,255';
+      saveLab1ToLS();
+    }
+
+    // Persistencia en localStorage de TODOS los campos del formulario de Lab 1
+    function formToObj(){
+      const g = n => document.querySelector(n);
+      return {
+        audio: g('input[name="audio"]').value,
+        text: g('input[name="text"]').value,
+        out: g('input[name="out"]').value,
+        fs: g('input[name="fs"]').value,
+        n_bits: g('input[name="n_bits"]').value,
+        quantizer: g('select[name="quantizer"]').value,
+        mu: g('input[name="mu"]').value,
+        lfsr_seed: g('input[name="lfsr_seed"]').value,
+        lfsr_taps: g('input[name="lfsr_taps"]').value,
+        lfsr_bitwidth: g('input[name="lfsr_bitwidth"]').value,
+        hist_bins: g('input[name="hist_bins"]').value,
+        entropy_step_a: g('input[name="entropy_step_a"]').value,
+        entropy_step_b: g('input[name="entropy_step_b"]').value,
+        sqnr_mus: g('input[name="sqnr_mus"]').value,
+      };
+    }
+    function objToForm(v){
+      const s = (sel,val)=>{ const el=document.querySelector(sel); if(el && val!=null) el.value = val; };
+      s('input[name="audio"]', v.audio);
+      s('input[name="text"]', v.text);
+      s('input[name="out"]', v.out);
+      s('input[name="fs"]', v.fs);
+      s('input[name="n_bits"]', v.n_bits);
+      s('select[name="quantizer"]', v.quantizer);
+      s('input[name="mu"]', v.mu);
+      s('input[name="lfsr_seed"]', v.lfsr_seed);
+      s('input[name="lfsr_taps"]', v.lfsr_taps);
+      s('input[name="lfsr_bitwidth"]', v.lfsr_bitwidth);
+      s('input[name="hist_bins"]', v.hist_bins);
+      s('input[name="entropy_step_a"]', v.entropy_step_a);
+      s('input[name="entropy_step_b"]', v.entropy_step_b);
+      s('input[name="sqnr_mus"]', v.sqnr_mus);
+    }
+    function saveLab1ToLS(){ try{ localStorage.setItem('lab1_form', JSON.stringify(formToObj())); }catch(e){} }
+    function loadLab1FromLS(){ try{ const v=localStorage.getItem('lab1_form'); if(v){ objToForm(JSON.parse(v)); } }catch(e){} }
+    window.addEventListener('DOMContentLoaded', ()=>{
+      loadLab1FromLS();
+      document.querySelectorAll('form input, form select').forEach(el=>{
+        el.addEventListener('change', saveLab1ToLS);
+      });
+    });
+  </script>
+{% endblock %}

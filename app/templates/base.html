@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CDA – Sistema Digital</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif; margin: 0; background: #f7f7fb; color: #111; }
+    header { padding: 14px 20px; background: #232a3b; color: #fff; }
+    header h1 { margin: 0; font-size: 18px; }
+    main { padding: 20px; max-width: 1100px; margin: 0 auto; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+    .card { background: #fff; border-radius: 10px; border: 1px solid #e7e7ef; padding: 16px; box-shadow: 0 1px 2px rgb(0 0 0 / 4%); }
+    .card h3 { margin: 0 0 8px; font-size: 18px; }
+    .btn { display: inline-block; padding: 8px 12px; border-radius: 8px; background: #3b82f6; color: #fff; text-decoration: none; }
+    .btn.secondary { background: #64748b; }
+    form .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    form .field { display: flex; flex-direction: column; margin-bottom: 10px; }
+    label { font-size: 12px; color: #334155; margin-bottom: 4px; }
+    input, select { padding: 8px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; }
+    .figs { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+    .figs img { width: 100%; height: auto; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; }
+    .flash { padding: 10px; border-radius: 8px; margin-bottom: 14px; }
+    .flash.warning { background: #fff7ed; border: 1px solid #fed7aa; }
+    .flash.error { background: #fef2f2; border: 1px solid #fecaca; }
+    .muted { color: #64748b; font-size: 13px; }
+    .badge { display:inline-block; padding:0 6px; font-size:11px; color:#334155; background:#e5e7eb; border-radius:999px; margin-left:6px; }
+    details.advanced { border:1px solid #e5e7eb; background:#fff; border-radius:8px; padding:10px 12px; }
+    details.advanced > summary { cursor:pointer; font-weight:600; color:#334155; margin:-10px -12px 10px; padding:10px 12px; }
+    details.advanced[open] { box-shadow: 0 1px 2px rgb(0 0 0 / 4%); }
+    /* Spinner overlay */
+    .overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.7); display: none; align-items: center; justify-content: center; z-index: 1000; }
+    .spinner { width: 42px; height: 42px; border: 4px solid #cbd5e1; border-top-color: #3b82f6; border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+  {% block head %}{% endblock %}
+  {% if config.DEBUG %}
+  <meta http-equiv="Cache-Control" content="no-store" />
+  {% endif %}
+  <link rel="icon" href="data:,">
+</head>
+<body>
+  <header>
+    <h1>CDA – Sistema Digital (Etapas)</h1>
+  </header>
+  <main>
+    <div id="overlay" class="overlay"><div class="spinner"></div></div>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, msg in messages %}
+          <div class="flash {{ category }}">{{ msg }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+  <script>
+    function showOverlay() { const el = document.getElementById('overlay'); if (el) el.style.display = 'flex'; }
+    function hideOverlay() { const el = document.getElementById('overlay'); if (el) el.style.display = 'none'; }
+    function addFlash(kind, msg){
+      const m = document.createElement('div');
+      m.className = 'flash ' + (kind||'warning');
+      m.textContent = msg;
+      document.querySelector('main').prepend(m);
+      setTimeout(()=>{ m.remove(); }, 6000);
+    }
+    // Auto-attach to all forms for UX feedback
+    window.addEventListener('DOMContentLoaded', () => {
+      document.querySelectorAll('form').forEach(form => {
+        form.addEventListener('submit', () => { showOverlay(); });
+      });
+    });
+  </script>
+</body>
+</html>

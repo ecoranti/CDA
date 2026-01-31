@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% block content %}
+  <h2>Resultados Lab 2</h2>
+  <p class="muted">Directorio de salida: <code>{{ out }}</code></p>
+  <p>
+    <a class="btn" href="{{ url_for('lab2_results', out=out) }}">Abrir carpeta de resultados</a>
+    <a class="btn secondary" href="{{ url_for('index') }}">Menú principal</a>
+  </p>
+  {% if figs %}
+    <h3>Figuras</h3>
+    <div class="figs">
+      {% for f in figs %}
+        <div>
+          <img src="{{ url_for('api_files') }}?path={{ out }}/{{ f }}" alt="{{ f }}">
+          <div class="muted">{{ f }}</div>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+  {% if bin_files %}
+    <h3>Exportables SDR</h3>
+    <ul>
+      {% for f in bin_files %}
+        <li><a href="{{ url_for('download', out=out, file=f) }}">{{ f }}</a></li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+  {% if other %}
+    <h3>Archivos</h3>
+    <ul>
+      {% for f in other %}
+        <li><a href="{{ url_for('download', out=out, file=f) }}">{{ f }}</a></li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+  <p>
+    <a class="btn secondary" href="{{ url_for('lab2_page') }}">Nueva corrida</a>
+    <a class="btn secondary" href="{{ url_for('index') }}">Menú principal</a>
+  </p>
+{% endblock %}

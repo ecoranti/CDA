@@ -1,0 +1,335 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Modulación Digital + Pulso RRC (Lab 2)</h2>
+<form method="post" action="{{ url_for('lab2_run') }}">
+  <div class="row">
+    <div class="field">
+      <label title="Carpeta base donde se crearán las corridas con timestamp">Salida</label>
+      <input name="out" value="{{ defaults.out_lab2 }}">
+    </div>
+    <div class="field">
+      <label title="Esquema de mapeo bits→símbolos (1 o 2 bits/símbolo)">Modulación</label>
+      <select name="modulation">
+        <option>BPSK</option>
+        <option selected>QPSK</option>
+      </select>
+    </div>
+    <div class="field">
+      <label title="Cantidad de bits pseudoaleatorios cuando no se usan bits de Lab 1">Cantidad de bits</label>
+      <input name="bits_len" type="number" value="2000">
+    </div>
+    <div class="field">
+      <label title="Oversampling: muestras por símbolo">Samples por símbolo (sps)</label>
+      <input name="sps" type="number" value="8">
+    </div>
+    <div class="field">
+      <label title="Factor de roll-off del RRC (0..1)">Roll-off α</label>
+      <input name="alpha" type="number" step="0.05" value="0.25">
+    </div>
+    <div class="field">
+      <label title="Longitud del pulso RRC en símbolos">Span del filtro (símbolos)</label>
+      <input name="span_symbols" type="number" value="8">
+    </div>
+    <div class="field">
+      <label title="Semilla del generador aleatorio para reproducibilidad">Seed (aleatoriedad)</label>
+      <input name="seed" type="number" value="0">
+    </div>
+  </div>
+  <button class="btn" type="submit">Generar señal IQ</button>
+  <button class="btn secondary" type="button" onclick="presetLab2()">Valores típicos</button>
+  <button class="btn secondary" type="button" onclick="quickAlpha(0.1)">α=0.1</button>
+  <button class="btn secondary" type="button" onclick="quickAlpha(0.25)">α=0.25</button>
+  <button class="btn secondary" type="button" onclick="quickAlpha(0.5)">α=0.5</button>
+  <button class="btn secondary" type="button" onclick="runApiLab2()">Ejecutar (API, sin recargar)</button>
+  <button class="btn secondary" type="button" onclick="quickExampleLab2()">Ejemplo rápido</button>
+  <a class="btn secondary" href="{{ url_for('index') }}">Menú principal</a>
+</form>
+<h3>Usar bits generados en Lab 1</h3>
+<div class="row">
+  <div class="field">
+    <label>Audio WAV (Lab 1)</label>
+    <input id="l1_audio" value="{{ defaults.audio }}">
+  </div>
+  <div class="field">
+    <label>Texto (Lab 1)</label>
+    <input id="l1_text" value="{{ defaults.text }}">
+  </div>
+  <div class="field">
+    <label>fs [Hz] (Lab 1)</label>
+    <input id="l1_fs" type="number" value="16000">
+  </div>
+  <div class="field">
+    <label>n_bits cuantización (Lab 1)</label>
+    <select id="l1_nbits">
+      <option value="8" selected>8</option>
+      <option value="10">10</option>
+      <option value="12">12</option>
+    </select>
+  </div>
+  <div class="field">
+    <label>Cuantizador (Lab 1)</label>
+    <select id="l1_quant">
+      <option value="mulaw" selected>µ-law</option>
+      <option value="uniform">Uniforme</option>
+    </select>
+  </div>
+  <div class="field">
+    <label>Fuente para bits</label>
+    <select id="l1_source">
+      <option value="audio" selected>Audio</option>
+      <option value="text">Texto</option>
+      <option value="concat">Concatenar (audio+texto)</option>
+    </select>
+  </div>
+  <div class="field">
+    <label>Método de ecualización</label>
+    <select id="l1_method">
+      <option value="scrambling" selected>Scrambling</option>
+      <option value="huffman">Huffman</option>
+    </select>
+  </div>
+  <details class="advanced" style="grid-column: 1 / -1;">
+    <summary>Avanzado Lab 1</summary>
+    <div class="row">
+      <div class="field">
+        <label title="µ para cuantización µ-law (si aplica)">µ (Lab1) <span class="badge">def=255</span></label>
+        <input id="l1_mu" type="number" value="255">
+      </div>
+      <div class="field">
+        <label title="Semilla del LFSR (acepta 0b/0x)">LFSR seed <span class="badge">0b1010110011</span></label>
+        <input id="l1_lfsr_seed" value="0b1010110011">
+      </div>
+      <div class="field">
+        <label title="Taps del LFSR separados por coma">LFSR taps <span class="badge">9,6</span></label>
+        <input id="l1_lfsr_taps" value="9,6">
+      </div>
+      <div class="field">
+        <label title="Bitwidth del LFSR">LFSR bitwidth <span class="badge">10</span></label>
+        <input id="l1_lfsr_bitwidth" type="number" value="10">
+      </div>
+    </div>
+  </details>
+</div>
+
+<div style="margin-top: 20px; padding: 15px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px;">
+  <p style="margin-top: 0; font-weight: bold; color: #1e3a8a; margin-bottom: 10px;">Acción Principal</p>
+  <button class="btn" type="button" onclick="runApiLab2FromLab1()"
+    style="width: 100%; font-size: 1.1em; padding: 12px; background-color: #2563eb;">
+    EJECUTAR SIMULACIÓN COMPLETA (Lab 1 &rarr; Lab 2)
+  </button>
+  <p class="muted" style="margin-bottom: 0; margin-top: 8px; font-size: 0.9em; text-align: center;">Usa TODOS los
+    parámetros configurados arriba (Audio/Texto/LFSR) + Modulación.</p>
+</div>
+
+<div style="margin-top: 15px;">
+  <p style="font-size: 0.9em; font-weight: bold; color: #555;">Configuración Rápida (Presets de fuente):</p>
+  <div style="display: flex; gap: 10px;">
+    <button class="btn secondary" type="button" onclick="presetSource('audio')"
+      title="Configura la fuente como SOLO Audio">Preset: Solo Audio</button>
+    <button class="btn secondary" type="button" onclick="presetSource('text')"
+      title="Configura la fuente como SOLO Texto">Preset: Solo Texto</button>
+    <button class="btn secondary" type="button" onclick="presetSource('mixed')"
+      title="Configura la fuente como Audio + Texto">Preset: Ambos</button>
+  </div>
+</div>
+<p class="muted">α pequeño reduce el ancho de banda pero alarga colas del pulso; α grande ensancha espectro y reduce
+  colas (trade-off BW/ISI).</p>
+<h3>Resultados (API)</h3>
+<div id="api-results"></div>
+<h3>Auditoría (Lab 1 → Lab 2)</h3>
+<div id="api-audit" class="muted"></div>
+<script>
+  function presetLab2() {
+    const n = document.querySelector('input[name="bits_len"]');
+    const sps = document.querySelector('input[name="sps"]');
+    const a = document.querySelector('input[name="alpha"]');
+    const span = document.querySelector('input[name="span_symbols"]');
+    const mod = document.querySelector('select[name="modulation"]');
+    if (n) n.value = 2000;
+    if (sps) sps.value = 8;
+    if (a) a.value = 0.25;
+    if (span) span.value = 8;
+    if (mod) mod.value = 'QPSK';
+  }
+  function quickAlpha(val) {
+    const a = document.querySelector('input[name="alpha"]');
+    if (a) a.value = val;
+  }
+  function getFormVals() {
+    const out = document.querySelector('input[name="out"]').value;
+    const modulation = document.querySelector('select[name="modulation"]').value;
+    const bits_len = parseInt(document.querySelector('input[name="bits_len"]').value || '2000', 10);
+    const sps = parseInt(document.querySelector('input[name="sps"]').value || '8', 10);
+    const alpha = parseFloat(document.querySelector('input[name="alpha"]').value || '0.25');
+    const span = parseInt(document.querySelector('input[name="span_symbols"]').value || '8', 10);
+    const seed = parseInt(document.querySelector('input[name="seed"]').value || '0', 10);
+    return { out_dir: out, modulation, n_bits: bits_len, sps, rolloff: alpha, span, seed };
+  }
+  async function runApiLab2() {
+    showOverlay();
+    try {
+      const payload = getFormVals();
+      const r = await fetch('/api/lab2/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const j = await r.json();
+      if (!j.ok) { throw new Error(j.error || 'Error desconocido'); }
+      renderLab2Results(j.paths);
+      addFlash('warning', 'Corrida completada (API).');
+    } catch (e) {
+      addFlash('error', String(e));
+    } finally { hideOverlay(); }
+  }
+  async function quickExampleLab2() {
+    showOverlay();
+    try {
+      const payload = { out_dir: '{{ defaults.out_lab2 }}', modulation: 'QPSK', n_bits: 2000, sps: 8, rolloff: 0.25, span: 8, seed: 0 };
+      const r = await fetch('/api/lab2/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const j = await r.json();
+      if (!j.ok) { throw new Error(j.error || 'Error desconocido'); }
+      renderLab2Results(j.paths);
+      addFlash('warning', 'Ejemplo rápido generado.');
+    } catch (e) { addFlash('error', String(e)); }
+    finally { hideOverlay(); }
+  }
+  function renderLab2Results(paths, audit) {
+    const c = document.getElementById('api-results');
+    if (!c) return;
+    const imgs = ['iq_time_png', 'constellation_png', 'spectrum_png', 'rrc_impulse_png', 'eye_png', 'bits_iq_transition_png'];
+    let html = '';
+    html += '<div class="figs">';
+    for (const k of imgs) { if (paths[k]) { html += `<div><img src="/api/files?path=${paths[k]}"/><div class="muted">${k.replace('_png', '')}.png</div></div>`; } }
+    if (paths['l1_bits_hist']) { html += `<div><img src="/api/files?path=${paths['l1_bits_hist']}"/><div class="muted">l1_bits_hist.png</div></div>`; }
+    html += '</div>';
+    html += '<h4>Archivos</h4><ul>';
+    if (paths['iq_bin']) html += `<li><a href="/api/files?path=${paths['iq_bin']}">iq.bin</a></li>`;
+    if (paths['bits_bin']) html += `<li><a href="/api/files?path=${paths['bits_bin']}">bits_from_lab1.bin</a></li>`;
+    if (paths['params']) html += `<li><a href="/api/files?path=${paths['params']}">params.json</a></li>`;
+    html += '</ul>';
+    c.innerHTML = html;
+
+    const a = document.getElementById('api-audit');
+    if (a && audit) {
+      const b = audit.bits || {};
+      const audio = audit.audio || null;
+      const text = audit.text || null;
+      let ah = '<ul>';
+      ah += `<li>Bits: count=${b.count} p0=${(b.p0 || 0).toFixed(3)} p1=${(b.p1 || 0).toFixed(3)} H=${(b.H || 0).toFixed(3)}</li>`;
+      if (audio) { ah += `<li>Audio: ${audio.path} (md5 ${audio.md5 || ''}) muestras=${audio.samples} dur=${(audio.duration_s || 0).toFixed(2)}s fs=${audio.fs_target}</li>`; }
+      if (text) { ah += `<li>Texto: ${text.path} (md5 ${text.md5 || ''}) bytes=${text.bytes} preview="${(text.preview || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}"</li>`; }
+      ah += '</ul>';
+      a.innerHTML = ah;
+    }
+  }
+
+  function getLab1Vals() {
+    return {
+      audio: document.getElementById('l1_audio').value,
+      text: document.getElementById('l1_text').value,
+      fs: parseInt(document.getElementById('l1_fs').value || '16000', 10),
+      n_bits: parseInt(document.getElementById('l1_nbits').value || '8', 10),
+      quantizer: document.getElementById('l1_quant').value,
+      source: document.getElementById('l1_source').value,
+      method: document.getElementById('l1_method').value,
+      mu: parseInt(document.getElementById('l1_mu').value || '255', 10),
+      lfsr_seed: document.getElementById('l1_lfsr_seed').value,
+      lfsr_taps: document.getElementById('l1_lfsr_taps').value,
+      lfsr_bitwidth: parseInt(document.getElementById('l1_lfsr_bitwidth').value || '10', 10),
+    };
+  }
+  function setLab1Vals(v) {
+    if (!v) return;
+    if (v.audio != null) document.getElementById('l1_audio').value = v.audio;
+    if (v.text != null) document.getElementById('l1_text').value = v.text;
+    if (v.fs != null) document.getElementById('l1_fs').value = v.fs;
+    if (v.n_bits != null) document.getElementById('l1_nbits').value = v.n_bits;
+    if (v.quantizer != null) document.getElementById('l1_quant').value = v.quantizer;
+    if (v.source != null) document.getElementById('l1_source').value = v.source;
+    if (v.method != null) document.getElementById('l1_method').value = v.method;
+    if (v.mu != null) document.getElementById('l1_mu').value = v.mu;
+    if (v.lfsr_seed != null) document.getElementById('l1_lfsr_seed').value = v.lfsr_seed;
+    if (v.lfsr_taps != null) document.getElementById('l1_lfsr_taps').value = v.lfsr_taps;
+    if (v.lfsr_bitwidth != null) document.getElementById('l1_lfsr_bitwidth').value = v.lfsr_bitwidth;
+  }
+  function presetSource(src) {
+    const sel = document.getElementById('l1_source');
+    sel.value = src;
+    saveLab1ToLS();
+    addFlash('warning', `Fuente de bits: ${src}`);
+  }
+  function lsGet(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { } }
+  function saveLab1ToLS() { lsSet('lab1_params', getLab1Vals()); }
+  function loadLab1FromLS() { const v = lsGet('lab1_params', null); if (v) setLab1Vals(v); }
+  async function runApiLab2FromLab1() {
+    showOverlay();
+    try {
+      const l2 = getFormVals();
+      const l1 = getLab1Vals();
+      saveLab1ToLS();
+      saveLab2ToLS(); // Explicitly save Lab 2 params
+      const payload = { ...l2, lab1: l1 };
+
+      // Feedback inmediato para el usuario
+      addFlash('info', `Iniciando simulación Lab 2 con bits de Lab 1... (Fuente: ${l1.source})`);
+
+      const r = await fetch('/api/lab2/run_from_lab1', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const j = await r.json();
+      if (!j.ok) { throw new Error(j.error || 'Error desconocido'); }
+
+      // Update LocalStorage with the ACTUAL output path (timestamped)
+      // This is crucial for Lab 3 to find the files
+      if (j.out) {
+        const currentParams = getFormVals();
+        currentParams.out = j.out;
+        lsSet('lab2_params', currentParams);
+      }
+
+      renderLab2Results(j.paths, j.audit);
+      addFlash('success', `¡Éxito! Simulación Lab 2 Completada usando bits de Lab 1.`);
+    } catch (e) { addFlash('error', String(e)); }
+    finally { hideOverlay(); }
+  }
+  // Lab 2 Persistence
+  function getFormVals() {
+    // This function exists above but we need to ensure it covers everything we want to save
+    return {
+      modulation: document.querySelector('select[name="modulation"]').value,
+      sps: parseInt(document.querySelector('input[name="sps"]').value),
+      n_bits: parseInt(document.querySelector('input[name="bits_len"]').value),
+      alpha: parseFloat(document.querySelector('input[name="alpha"]').value),
+      span: parseInt(document.querySelector('input[name="span_symbols"]').value),
+      seed: parseInt(document.querySelector('input[name="seed"]').value),
+      out: document.querySelector('input[name="out"]').value
+    };
+  }
+  function saveLab2ToLS() { lsSet('lab2_params', getFormVals()); }
+  function loadLab2FromLS() {
+    const v = lsGet('lab2_params', null);
+    if (v) {
+      if (v.modulation) document.querySelector('select[name="modulation"]').value = v.modulation;
+      if (v.sps) document.querySelector('input[name="sps"]').value = v.sps;
+      if (v.n_bits) document.querySelector('input[name="bits_len"]').value = v.n_bits;
+      if (v.alpha) document.querySelector('input[name="alpha"]').value = v.alpha;
+      if (v.span) document.querySelector('input[name="span_symbols"]').value = v.span;
+      if (v.seed) document.querySelector('input[name="seed"]').value = v.seed;
+      if (v.out) document.querySelector('input[name="out"]').value = v.out;
+    }
+  }
+
+  // Persistencia automática
+  window.addEventListener('DOMContentLoaded', () => {
+    loadLab1FromLS();
+    loadLab2FromLS();
+
+    // Listeners for Lab 1
+    ['l1_audio', 'l1_text', 'l1_fs', 'l1_nbits', 'l1_quant', 'l1_source', 'l1_method', 'l1_mu', 'l1_lfsr_seed', 'l1_lfsr_taps', 'l1_lfsr_bitwidth'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) { el.addEventListener('change', saveLab1ToLS); }
+    });
+
+    // Listeners for Lab 2
+    document.querySelectorAll('form input, form select').forEach(el => {
+      el.addEventListener('change', saveLab2ToLS);
+    });
+  });
+</script>
+{% endblock %}

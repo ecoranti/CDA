@@ -1,51 +1,118 @@
+# Proyecto CDA - Laboratorios 1, 2 y 3
 
-# Lab 1 – Formateo y Ecualización del Histograma (Pipeline reproducible)
+Este repositorio integra los pipelines de procesamiento para la materia Comunicación de Datos y Audio (Sistemas de Comunicaciones). Incluye una **Interfaz Web (Flask)** unificada para facilitar la ejecución y visualización de los tres laboratorios:
 
-Este repositorio implementa el pipeline para el **Laboratorio N°1**: tomar dos fuentes (audio y texto), **formatear** a binario y aplicar **ecualización del histograma** por dos métodos:
-1) **Scrambling PRBS (LFSR)** – blanqueo/equiprobabilidad sin cambiar la tasa.
-2) **Codificación de fuente (Huffman)** – compresión por redundancia de símbolos.
+*   **Lab 1 - Formateo y Ecualización**: Cuantización (Uniforme/$\mu$-law), Compresión (Huffman) y Scrambling.
+*   **Lab 2 - Modulación Digital + RRC**: Mapeo de símbolos (BPSK/QPSK) y filtro conformador de pulso (Raíz de Coseno Alzado).
+*   **Lab 3 - Demodulación y BER**: Canal AWGN, Filtro Acoplado, recuperación de reloj y estimación de Tasa de Error de Bit (BER).
 
-Se generan **gráficos** (señal, histogramas) y **métricas** (P(0), P(1), entropía, varianza, longitud media de Huffman), además de un **informe Markdown** y un **CSV** resumen.
+---
 
+## 🚀 Guía de Inicio Rápido (De cero)
 
-## Requisitos
-- Python 3.10+
-- Instalar dependencias:
+Sigue estos pasos para instalar y correr el proyecto en tu sistema local.
+
+### 1. Prerrequisitos
+*   **Python 3.10** o superior.
+*   **Git** (opcional, para clonar).
+
+### 2. Instalación
+
+Se recomienda encarecidamente usar un **entorno virtual** para evitar conflictos de dependencias.
+
+#### Paso 1: Clonar o descargar el código
+Si tienes git:
+```bash
+git clone <url-del-repo>
+cd cda
+```
+O simplemente descomprime el archivo ZIP en una carpeta.
+
+#### Paso 2: Crear y activar entorno virtual
+En la terminal (dentro de la carpeta del proyecto):
+
+**macOS / Linux:**
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+**Windows (PowerShell):**
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+```
+
+#### Paso 3: Instalar dependencias
 ```bash
 pip install -r requirements.txt
+```
 
+---
 
-# 1) Activar venv (opcional)
-python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+## 🖥️ Ejecución de la Aplicación Web
 
-# 2) Instalar deps
-pip install -r requirements.txt
+La forma más fácil de interactuar con el proyecto es mediante la aplicación web incluida.
 
-# 3) Ejecutar el pipeline
-python -m src.main --audio data/voice.wav --text data/sample_text.txt --out outputs --fs 16000 --n_bits 8
+1.  Asegúrate de tener el entorno virtual activado.
+2.  Ejecuta el servidor:
+    ```bash
+    # Opción A (Puerto por defecto 5000)
+    python app/app.py
 
-## Uso rápido
+    # Opción B (Especificar puerto, útil si el 5000 está ocupado)
+    PORT=5001 python app/app.py
+    ```
+3.  Abre tu navegador (Chrome, Firefox, Safari) e ingresa a:
+    *   **http://127.0.0.1:5000/** (o el puerto que hayas configurado).
 
-# 1) Activar venv (opcional)
-python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+Verás el menú principal con acceso a los tres laboratorios.
 
-# 2) Instalar deps
-pip install -r requirements.txt
+---
 
-# 3) Ejecutar el pipeline
-python -m src.main --audio data/voice.wav --text data/sample_text.txt --out outputs --fs 16000 --n_bits 8
+## 🧪 Descripción de los Laboratorios
 
-Parámetros relevantes:
-    •    --audio: WAV (PCM) a procesar (mono o estéreo). Si es estéreo, se convierte a mono.
-    •    --text: archivo de texto (UTF-8).
-    •    --fs: frecuencia de muestreo objetivo del audio (por defecto 16000 Hz).
-    •    --n_bits: bits de cuantificación uniforme (por defecto 8).
+### Lab 1: Formateo y Fuente
+Convierte señales analógicas (audio) o texto a un flujo de bits digital.
+*   **Features**: Cuantización ajustable (bits, $\mu$), codificación entrópica (Huffman) y aleatorización (Scrambling).
+*   **Salida**: Gráficos de histogramas de bits, evolución de entropía, comparativas de SQNR/MSE.
 
-Salidas
-    •    outputs/figures/*.png: señal en el tiempo, histograma de amplitudes, histogramas de bits antes y después (scrambling y Huffman).
-    •    outputs/resumen_metricas.csv
-    •    outputs/informe_lab1.md
+### Lab 2: Transmisor Digital
+Toma una secuencia de bits (o genera una aleatoria) y simula la etapa de transmisión.
+*   **Features**: Modulaciones BPSK/QPSK, Filtro RRC con *roll-off* ($\alpha$) variable, sobremuestreo (SPS).
+*   **Salida**: Diagrama de Constelación (Tx), Ojo, Espectro, y archivos `.bin` (IQ flotante) para SDR.
 
-Notas didácticas
-    •    Scrambling busca P(0)≈P(1) para mejorar transmisión (relojeo, DC balance). No comprime.
-    •    Huffman explota redundancia de símbolos (texto, niveles cuantizados). Reduce la longitud media, acercándose al límite dado por la entropía.
+### Lab 3: Receptor y Canal
+Simula el canal de comunicaciones y la etapa de recepción.
+*   **Features**: Canal AWGN (ruido gaussiano), Filtro Acoplado (Matched Filter), estimación de BER vs Eb/N0.
+*   **Modos**:
+    *   **Simulación de Curva**: Barre valores de Eb/N0 para generar la curva de BER.
+    *   **Integración**: Puede tomar la salida del Lab 2 y demodularla para verificar la transmisión completa.
+
+---
+
+## ⌨️ Ejecución vía Consola (CLI)
+
+Si prefieres usar la línea de comandos para scripts automatizados:
+
+**Lab 1:**
+```bash
+python -m src.main --audio data/voice.wav --n_bits 8 --quantizer mulaw --out outputs/cli_lab1
+```
+
+**Ayuda:**
+```bash
+python -m src.main -h
+```
+
+---
+
+## 📂 Estructura de Archivos
+
+*   `app/`: Código de la aplicación web (Flask) y templates HTML.
+*   `src/`: Librerías core de procesamiento DSP.
+    *   `main.py`: Lógica Lab 1.
+    *   `lab2_rrc.py`: Lógica Lab 2.
+    *   `lab3_demod.py`: Lógica Lab 3.
+*   `data/`: Archivos de entrada de ejemplo (audio, texto).
+*   `outputs_ui/`: Carpeta donde se guardan los resultados de las corridas web (organizados por fecha).
