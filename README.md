@@ -57,14 +57,14 @@ La forma más fácil de interactuar con el proyecto es mediante la aplicación w
 1.  Asegúrate de tener el entorno virtual activado.
 2.  Ejecuta el servidor:
     ```bash
-    # Opción A (Puerto por defecto 5000)
+    # Opción A (Puerto por defecto 5001)
     python app/app.py
 
-    # Opción B (Especificar puerto, útil si el 5000 está ocupado)
-    PORT=5001 python app/app.py
+    # Opción B (Especificar otro puerto)
+    PORT=5000 python app/app.py
     ```
 3.  Abre tu navegador (Chrome, Firefox, Safari) e ingresa a:
-    *   **http://127.0.0.1:5000/** (o el puerto que hayas configurado).
+    *   **http://127.0.0.1:5001/** (o el puerto que hayas configurado).
 
 Verás el menú principal con acceso a los tres laboratorios.
 
@@ -88,6 +88,111 @@ Simula el canal de comunicaciones y la etapa de recepción.
 *   **Modos**:
     *   **Simulación de Curva**: Barre valores de Eb/N0 para generar la curva de BER.
     *   **Integración**: Puede tomar la salida del Lab 2 y demodularla para verificar la transmisión completa.
+
+---
+
+## 🔗 Flujo Encadenado Recomendado (Entrega)
+
+Para cumplir el enfoque del laboratorio, ejecutar en este orden:
+
+1. `Lab 1`: generar bits de fuente (audio/texto), métricas y gráficos.
+2. `Lab 2`: usar bits de Lab 1 para generar señal IQ (`iq.bin`) y guardar parámetros.
+3. `Lab 3`: usar la salida real de Lab 2 (`iq.bin` + bits) para:
+   - inyectar AWGN,
+   - aplicar filtro acoplado,
+   - detectar símbolos (ML/MAP),
+   - calcular BER y curva BER vs Eb/N0.
+
+Este encadenamiento evita una simulación aislada y mantiene la trazabilidad del sistema completo.
+
+---
+
+## ✅ Matriz de Cumplimiento (Guía de Informe)
+
+La siguiente tabla indica qué pide la guía y dónde queda evidenciado en el proyecto.
+
+| Requisito de la guía | Estado | Evidencia / archivo |
+|---|---|---|
+| Descripción teórica y diagrama de bloques del sistema | Parcial (plantilla) | `docs/articulo_lab3_template.md`, `docs/presentacion_lab3_template.md` |
+| Implementación Python/Colab del sistema completo | Cumple | `src/main.py`, `src/lab2_rrc.py`, `src/lab3_demod.py`, `app/app.py` |
+| Señal original en tiempo y/o espectro | Cumple | Salidas Lab 1 y Lab 2 en `outputs_ui/...` |
+| Histograma de amplitudes (antes del formateo) | Cumple | Lab 1: `A_signal_hist.png` |
+| Histogramas de bits antes/después ecualización | Cumple | Lab 1: `A_bits_*`, `B_bits_*` |
+| Evolución de entropía | Cumple | Lab 1: `*_entropy_evolution*.png` |
+| Señal IQ en tiempo (I/Q) | Cumple | Lab 2: `iq_time.png`, Lab 3: `rx_time.png` |
+| Espectro de potencia | Cumple | Lab 2: `spectrum.png` |
+| Constelación de símbolos | Cumple | Lab 2/3: `constellation.png`, `rx_constellation.png` |
+| Forma del pulso RRC y respuesta temporal | Cumple | Lab 2: `rrc_impulse.png` |
+| Constelaciones antes y después del canal | Cumple | Lab 3: `tx_rx_constellations.png` |
+| Respuesta impulsiva y en frecuencia del filtro acoplado | Cumple | Lab 3: `mf_impulse.png`, `mf_freq.png` |
+| Salida del filtro acoplado y decisión MAP/ML | Cumple | Lab 3: `rx_decision.png` |
+| Curva Pb(Eb/N0) experimental vs teórica | Cumple | Lab 3: `ber_curve.png`, `ber_results.csv` |
+| Discusión crítica | Parcial (plantilla) | `informe_lab3.md` + plantillas en `docs/` |
+| Presentación PowerPoint | Parcial (plantilla) | `docs/presentacion_lab3_template.md` |
+| Artículo técnico IEEE/APA | Parcial (plantilla) | `docs/articulo_lab3_template.md` |
+
+Notas:
+- `Cumple`: se genera automáticamente por pipeline.
+- `Parcial`: hay base/plantilla, pero requiere redacción final del grupo.
+
+---
+
+## 🧭 Cobertura del Informe (Automático vs Manual)
+
+### Generado automáticamente por el proyecto
+- **Lab 1**: `informe_lab1.md`, `informe_lab1.pdf`, histogramas, entropía, SQNR/MSE.
+- **Lab 2**: `iq.bin`, `params.json`, `iq_time.png`, `constellation.png`, `spectrum.png`, `rrc_impulse.png`, `eye_diagram.png`.
+- **Lab 3**: `ber_curve.png`, `ber_results.csv`, `rx_time.png`, `rx_eye.png`, `rx_constellation.png`, `tx_rx_constellations.png`, `mf_impulse.png`, `mf_freq.png`, `rx_decision.png`, `informe_lab3.md`, `informe_lab3.pdf`.
+
+### Requiere completar manualmente para la entrega
+- Redacción final de **discusión técnica y conclusiones** (interpretación crítica de resultados).
+- **Presentación** final usando `docs/presentacion_lab3_template.md`.
+- **Artículo técnico** final usando `docs/articulo_lab3_template.md`.
+- Ajuste de formato institucional (portada, autores, bibliografía, estilo de cátedra).
+
+---
+
+## 🔎 Checklist de Validación Pre-Entrega
+
+Después de correr Lab 1 -> Lab 2 -> Lab 3, verificar:
+
+1. En `outputs_ui/lab2/<timestamp>/` existan `iq.bin` y `bits_from_lab1.bin` (o `bits.bin`).
+2. En `outputs_ui/lab3/<timestamp>/` exista `ber_results.csv` y la curva `ber_curve.png`.
+3. En `outputs_ui/lab3/<timestamp>/` estén las figuras de receptor: `rx_eye.png`, `rx_constellation.png`, `rx_decision.png`.
+4. En `outputs_ui/lab3/<timestamp>/` estén `informe_lab3.md` e `informe_lab3.pdf`.
+5. La tabla de `ber_results.csv` muestre columnas de `BER_Sim`, `BER_Theory`, `BER_CI95_MonteCarlo`, `EbN0_Est_Mean_dB`.
+
+Si se cumple el checklist, el repositorio cubre los requisitos técnicos medibles del informe; solo resta la redacción final del equipo.
+
+---
+
+## 🧾 Informes Automáticos
+
+### Lab 1
+- `informe_lab1.md`
+- `informe_lab1.pdf`
+
+### Lab 3
+- `informe_lab3.md`
+- `informe_lab3.pdf`
+
+Se generan en la carpeta de salida de cada corrida (`outputs_ui/labX/<timestamp>/`).
+
+---
+
+## 📦 Entregables del Proyecto (qué exportar)
+
+Para armar la entrega final, exportar:
+
+1. Carpeta de resultados de Lab 1 (`outputs_ui/lab1/<timestamp>/`).
+2. Carpeta de resultados de Lab 2 (`outputs_ui/lab2/<timestamp>/`).
+3. Carpeta de resultados de Lab 3 (`outputs_ui/lab3/<timestamp>/`), incluyendo:
+   - `ber_curve.png`
+   - `ber_results.csv`
+   - `informe_lab3.md`
+   - `informe_lab3.pdf`
+4. Presentación final basada en `docs/presentacion_lab3_template.md`.
+5. Artículo final basado en `docs/articulo_lab3_template.md`.
 
 ---
 
@@ -116,3 +221,6 @@ python -m src.main -h
     *   `lab3_demod.py`: Lógica Lab 3.
 *   `data/`: Archivos de entrada de ejemplo (audio, texto).
 *   `outputs_ui/`: Carpeta donde se guardan los resultados de las corridas web (organizados por fecha).
+*   `docs/`: Plantillas para entregables de Lab 3:
+    * `docs/presentacion_lab3_template.md` (estructura PowerPoint)
+    * `docs/articulo_lab3_template.md` (estructura IEEE/APA)

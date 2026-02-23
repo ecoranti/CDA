@@ -282,6 +282,7 @@ def run_lab2(params: Lab2Params, bits: np.ndarray | None = None) -> Dict[str, st
     paths = {
         "params": os.path.join(params.out_dir, "params.json"),
         "iq_bin": os.path.join(params.out_dir, "iq.bin"),
+        "bits_bin": os.path.join(params.out_dir, "bits.bin"),
         "rrc_impulse_png": os.path.join(params.out_dir, "rrc_impulse.png"),
         "iq_time_png": os.path.join(params.out_dir, "iq_time.png"),
         "constellation_png": os.path.join(params.out_dir, "constellation.png"),
@@ -297,6 +298,7 @@ def run_lab2(params: Lab2Params, bits: np.ndarray | None = None) -> Dict[str, st
         pass
     _save_json(p, paths["params"])
     save_iq_float32(iq, paths["iq_bin"])
+    np.asarray(bits, dtype=np.uint8).ravel().tofile(paths["bits_bin"])
     plot_rrc(taps, params.sps, paths["rrc_impulse_png"])
     plot_time_iq(iq, params.sps, paths["iq_time_png"])
     plot_constellation(iq, params.sps, paths["constellation_png"])

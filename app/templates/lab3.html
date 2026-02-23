@@ -37,7 +37,7 @@
   /* Metrics grid override */
   .metrics-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(6, 1fr);
     gap: 10px;
     text-align: center;
   }
@@ -214,8 +214,16 @@
       <div id="metrics-panel" class="card hidden">
         <div class="metrics-grid">
           <div class="metric-box">
-            <div class="metric-label">Eb/N0</div>
-            <div class="metric-val" id="res-ebn0">-</div>
+            <div class="metric-label">Eb/N0 objetivo</div>
+            <div class="metric-val" id="res-ebn0-target">-</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-label">Eb/N0 estimado</div>
+            <div class="metric-val" id="res-ebn0-est">-</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-label">Delta dB</div>
+            <div class="metric-val" id="res-ebn0-delta">-</div>
           </div>
           <div class="metric-box">
             <div class="metric-label">BER</div>
@@ -245,12 +253,30 @@
           </div>
         </div>
         <div class="card" style="margin-top: 16px;">
+          <h3>Constelaciones Tx vs Rx</h3>
+          <img id="img-tx-rx-const" src="" style="width:100%; border-radius:4px;">
+        </div>
+        <div class="grid" style="margin-top: 16px;">
+          <div class="card">
+            <h3>Filtro Acoplado: Respuesta Impulsiva</h3>
+            <img id="img-mf-impulse" src="" style="width:100%; border-radius:4px;">
+          </div>
+          <div class="card">
+            <h3>Filtro Acoplado: Respuesta en Frecuencia</h3>
+            <img id="img-mf-freq" src="" style="width:100%; border-radius:4px;">
+          </div>
+        </div>
+        <div class="card" style="margin-top: 16px;">
           <h3>Punto de Operación (BER vs Eb/N0)</h3>
           <img id="img-ber-point" src="" style="width:100%; border-radius:4px;">
         </div>
         <div class="card" style="margin-top: 16px;">
           <h3>Señal en Tiempo (Rx Filtrada)</h3>
           <img id="img-time" src="" style="width:100%; border-radius:4px;">
+        </div>
+        <div class="card" style="margin-top: 16px;">
+          <h3>Salida del Filtro + Decisión ML/MAP</h3>
+          <img id="img-rx-decision" src="" style="width:100%; border-radius:4px;">
         </div>
       </div>
 
@@ -273,9 +299,26 @@
 <div id="content-ber" class="hidden">
   <div class="card">
     <h3>Generador de Curvas BER</h3>
-    <p class="muted">Ejecuta una simulación barriendo Eb/N0 para obtener la curva de rendimiento (Bit Error Rate).</p>
+    <p class="muted">Ejecuta una simulación barriendo Eb/N0 para obtener la curva BER, encadenada con la salida real de Lab 2.</p>
 
     <form action="{{ url_for('lab3_run') }}" method="POST">
+      <div class="row">
+        <div class="field">
+          <label style="display:flex; align-items:center; gap:8px;">
+            <input id="ber_use_l2_chain" name="use_l2_chain_ui" type="checkbox" checked disabled>
+            Usar cadena completa Lab2 → Lab3 (obligatorio)
+          </label>
+          <small class="muted">Si está activo, la curva usa `iq.bin` + bits de una corrida real de Lab 2.</small>
+          <input type="hidden" name="use_l2_chain" value="on">
+        </div>
+        <div class="field">
+          <label>Ruta salida Lab 2 (opcional)</label>
+          <input id="ber_lab2_path" name="lab2_path" placeholder="Ej: /Users/.../outputs_ui/lab2/2026...">
+          <div style="margin-top:8px;">
+            <button type="button" class="btn secondary" onclick="fillBerLab2Path()">Usar última corrida de Lab 2</button>
+          </div>
+        </div>
+      </div>
       <div class="row">
         <div class="field">
           <label>Modulación</label>
@@ -302,6 +345,15 @@
           <label>Paso</label>
           <input name="eb_step" type="number" value="1">
         </div>
+        <div class="field">
+          <label>Muestras Monte Carlo por Eb/N0</label>
+          <input id="ber_trials" name="trials_per_ebn0" type="number" min="1" value="20">
+          <small class="muted">Recomendado: 20 a 50 para estabilizar la curva BER.</small>
+        </div>
+      </div>
+      <div style="display:flex; gap:10px; margin-top: 8px;">
+        <button type="button" class="btn secondary" onclick="setTrialsPreset(20)">Rápido (20)</button>
+        <button type="button" class="btn secondary" onclick="setTrialsPreset(50)">Robusto (50)</button>
       </div>
 
       <!-- Hidden defaults -->
@@ -331,6 +383,20 @@
       document.getElementById('tab-ber').classList.add('active');
     }
   }
+
+  function setTrialsPreset(n) {
+    const inp = document.getElementById('ber_trials');
+    if (inp) inp.value = String(n);
+  }
+
+  function fillBerLab2Path() {
+    try {
+      const l2 = JSON.parse(localStorage.getItem('lab2_params') || '{}');
+      const inp = document.getElementById('ber_lab2_path');
+      if (inp && l2 && l2.out) inp.value = l2.out;
+    } catch (e) {}
+  }
+
 
   async function runInteractive() {
     const btn = document.querySelector('button[onclick="runInteractive()"]');
@@ -364,9 +430,9 @@
           modulation: document.getElementById('i_mod').value,
           ebn0: parseFloat(document.getElementById('i_ebn0').value),
           sps: parseInt(document.getElementById('i_sps').value),
-          alpha: parseFloat(document.getElementById('i_alpha').value),
+          rolloff: parseFloat(document.getElementById('i_alpha').value),
           n_bits: parseInt(document.getElementById('i_nbits').value),
-          out: document.getElementById('i_out').value,
+          out_dir: document.getElementById('i_out').value,
           lab1: {
             source: document.getElementById('l1_source').value,
             audio: document.getElementById('l1_audio').value,
@@ -389,8 +455,7 @@
         body: JSON.stringify(payload)
       });
       const data = await r.json();
-
-      if (!data.ok) throw new Error(data.error);
+      if (!r.ok || !data.ok) throw new Error(data.error || "Error de backend");
 
       drawResults(data);
 
@@ -408,7 +473,9 @@
     const metrics = document.getElementById('metrics-panel');
 
     // Update Metrics
-    document.getElementById('res-ebn0').innerText = data.ebn0.toFixed(1) + ' dB';
+    document.getElementById('res-ebn0-target').innerText = (data.ebn0_target_db ?? data.ebn0).toFixed(2) + ' dB';
+    document.getElementById('res-ebn0-est').innerText = (data.ebn0_est_db ?? data.ebn0).toFixed(2) + ' dB';
+    document.getElementById('res-ebn0-delta').innerText = (data.ebn0_delta_db ?? 0).toFixed(2) + ' dB';
     document.getElementById('res-ber').innerText = data.ber.toExponential(2);
     document.getElementById('res-errors').innerText = data.n_errors;
     document.getElementById('res-bits').innerText = data.n_bits;
@@ -428,9 +495,27 @@
     if (data.paths.rx_time_png) {
       document.getElementById('img-time').src = "/api/files?path=" + data.paths.rx_time_png + "&t=" + Date.now();
     }
+    if (data.paths.tx_rx_constellations_png) {
+      document.getElementById('img-tx-rx-const').src = "/api/files?path=" + data.paths.tx_rx_constellations_png + "&t=" + Date.now();
+    }
+    if (data.paths.mf_impulse_png) {
+      document.getElementById('img-mf-impulse').src = "/api/files?path=" + data.paths.mf_impulse_png + "&t=" + Date.now();
+    }
+    if (data.paths.mf_freq_png) {
+      document.getElementById('img-mf-freq').src = "/api/files?path=" + data.paths.mf_freq_png + "&t=" + Date.now();
+    }
+    if (data.paths.rx_decision_png) {
+      document.getElementById('img-rx-decision').src = "/api/files?path=" + data.paths.rx_decision_png + "&t=" + Date.now();
+    }
 
     graphs.classList.remove('hidden');
   }
+
+  window.addEventListener('DOMContentLoaded', () => {
+    fillBerLab2Path();
+    document.querySelectorAll('select[name="modulation"], input[name="n_bits"]').forEach(el => {
+      el.disabled = true;
+    });
+  });
 </script>
 {% endblock %}
-```

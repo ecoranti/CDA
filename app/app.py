@@ -18,10 +18,11 @@ os.environ.setdefault("MPLBACKEND", "Agg")
 # Importar pipelines
 from src import main as lab1
 from src import report as lab1_report
+from src import report_lab3 as lab3_report
 from src import sqnr_eval as lab1_sqnr
 from src import lab2_rrc
 from src.audio_utils import load_wav_mono, uniform_quantize, mu_law_quantize, plot_hist_bits
-from src.bits_utils import ints_to_bits, bits_to_bytes, bits_entropy_stats
+from src.bits_utils import ints_to_bits
 from src.scrambling import scramble
 from src.huffman import encode
 from src import lab3_demod
@@ -59,6 +60,22 @@ def create_app() -> Flask:
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "a", encoding="utf-8") as f:
             f.write(line.rstrip() + "\n")
+
+    def _latest_lab2_output_dir(base_lab2: str) -> Optional[str]:
+        try:
+            root = Path(base_lab2)
+            if not root.exists():
+                return None
+            candidates = []
+            for d in root.iterdir():
+                if d.is_dir() and (d / "iq.bin").exists() and (d / "params.json").exists():
+                    candidates.append(d)
+            if not candidates:
+                return None
+            latest = sorted(candidates, key=lambda p: p.name, reverse=True)[0]
+            return str(latest)
+        except Exception:
+            return None
 
     @app.template_filter("relative_path")
     def relative_path_filter(s: str) -> str:
@@ -468,10 +485,10 @@ def create_app() -> Flask:
             if len(bits) == 0:
                 raise ValueError("La secuencia de bits construida está vacía")
 
-            # Guardar bits binarios para trazabilidad
-            bin_bytes = bytes(bits_to_bytes(bits))
+            # Guardar bits crudos (0/1 por byte) para trazabilidad Lab2->Lab3.
+            import numpy as _np
             bf = base_abs / "bits_from_lab1.bin"
-            bf.write_bytes(bin_bytes)
+            _np.asarray(bits, dtype=_np.uint8).ravel().tofile(bf)
             # Histograma y métricas para auditar origen de bits
             try:
                 plot_hist_bits(bits, "Bits (Lab1→Lab2)", str(base_abs / "l1_bits_hist.png"), as_probability=True)
@@ -521,7 +538,6 @@ def create_app() -> Flask:
             params = lab2_rrc.Lab2Params(
                 out_dir=str(base_abs), n_bits=len(bits), modulation=mod, sps=sps, rolloff=alpha, span=span, seed=seed
             )
-            import numpy as _np
             paths = lab2_rrc.run_lab2(params, bits=_np.array(bits, dtype=_np.uint8))
             gen = {}
             for k, v in paths.items():
@@ -635,39 +651,53 @@ def create_app() -> Flask:
     def lab3_run():
         base_out = request.form.get("out") or DEFAULTS["out_lab3"]
         out_dir = str(_ts_dir(Path(base_out)))
+        use_l2_chain = True
+        lab2_path = (request.form.get("lab2_path") or "").strip()
         mod = request.form.get("modulation") or "QPSK"
         n_bits = int(request.form.get("n_bits") or 10000)
         eb_start = float(request.form.get("eb_start") or 0.0)
         eb_end = float(request.form.get("eb_end") or 12.0)
         eb_step = float(request.form.get("eb_step") or 2.0)
+        trials = int(request.form.get("trials_per_ebn0") or 20)
         sps = int(request.form.get("sps") or 8)
         seed = int(request.form.get("seed") or 42)
 
         try:
-            params = lab3_demod.Lab3Params(
+            if trials <= 0:
+                raise ValueError("trials_per_ebn0 debe ser > 0")
+            l2 = lab2_path or _latest_lab2_output_dir(DEFAULTS["out_lab2"])
+            if not l2:
+                raise ValueError("No hay salida de Lab 2 disponible. Ejecutá Lab 2 primero.")
+            res = lab3_demod.run_simulation_from_file(
+                lab2_dir=l2,
                 out_dir=out_dir,
-                n_bits=n_bits,
-                modulation=mod,
-                sps=sps,
                 ebn0_start=eb_start,
                 ebn0_end=eb_end,
                 ebn0_step=eb_step,
-                seed=seed
+                trials_per_ebn0=trials,
+                seed=seed,
             )
-            res = lab3_demod.run_simulation(params)
             
             # Save params for UI
             _write_json(Path(out_dir) / "params.json", {
+                "mode": "lab2_chain" if use_l2_chain else "standalone",
+                "lab2_path": (lab2_path or _latest_lab2_output_dir(DEFAULTS["out_lab2"])) if use_l2_chain else None,
                 "n_bits": n_bits,
                 "modulation": mod,
                 "eb_start": eb_start, 
                 "eb_end": eb_end,
                 "eb_step": eb_step,
+                "trials_per_ebn0": trials,
                 "sps": sps,
                 "seed": seed,
                 "out": out_dir
             })
-            _append_log(Path(out_dir) / "run_log.txt", f"Lab3 run OK: {params}")
+            try:
+                lab3_report.write_markdown(out_dir)
+                lab3_report.write_pdf(out_dir)
+            except Exception as _e:
+                _append_log(Path(out_dir) / "run_log.txt", f"[WARN] Informe Lab3 no generado: {_e}")
+            _append_log(Path(out_dir) / "run_log.txt", f"Lab3 run OK: mode={'lab2_chain' if use_l2_chain else 'standalone'}")
 
         except Exception as e:
             flash(f"Error al ejecutar Lab 3: {e}", "error")
@@ -686,7 +716,7 @@ def create_app() -> Flask:
         ber_csv = "ber_results.csv" if (p / "ber_results.csv").exists() else None
         
         other = []
-        for name in ["params.json", "run_log.txt"]:
+        for name in ["params.json", "run_log.txt", "informe_lab3.md", "informe_lab3.pdf"]:
             if (p / name).exists():
                 other.append(name)
                 
@@ -720,14 +750,14 @@ def create_app() -> Flask:
                 return jsonify({"ok": False, "error": str(e)}), 400
 
         # --- Mode B: Interactive / Parameter-Based ---
-        base_out = data.get("out_dir") or DEFAULTS["out_lab3"]
+        base_out = data.get("out_dir") or data.get("out") or DEFAULTS["out_lab3"]
         out_dir = str(_ts_dir(Path(base_out)))
         base_abs = (ROOT / out_dir).resolve() if not Path(out_dir).is_absolute() else Path(out_dir).resolve()
         
         # Params
         mod = (data.get("modulation") or "QPSK").upper()
         sps = int(data.get("sps") or 8)
-        alpha = float(data.get("rolloff") or 0.25)
+        alpha = float(data.get("rolloff") if data.get("rolloff") is not None else (data.get("alpha") or 0.25))
         span = int(data.get("span") or 8)
         seed = int(data.get("seed") or 42)
         ebn0 = float(data.get("ebn0") or 10.0)
@@ -766,9 +796,7 @@ def create_app() -> Flask:
                         "text": text if source in ["text","concat"] else None
                     }
             except Exception as e:
-                 # If lab1 fail, we fall back to random? or error?
-                 # Let's just log and proceed with random if bits empty
-                 _append_log(Path(out_dir)/"run_log.txt", f"Lab1 integration warning: {e}")
+                 return jsonify({"ok": False, "error": f"Lab1 integration error: {e}"}), 400
 
         # If no bits from Lab 1, use n_bits random
         n_bits_sim = len(bits) if bits else int(data.get("n_bits") or 10000)
@@ -891,5 +919,5 @@ def create_app() -> Flask:
 app = create_app()
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", "5000"))
+    port = int(os.environ.get("PORT", "5001"))
     app.run(host="0.0.0.0", port=port, debug=True)

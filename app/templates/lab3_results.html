@@ -4,6 +4,8 @@
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
     <h2>Resultados Lab 3</h2>
     <div style="display: flex; gap: 10px;">
+        <a href="{{ url_for('download', out=out, file='informe_lab3.pdf') }}" class="btn">Descargar informe (PDF)</a>
+        <a href="{{ url_for('download', out=out, file='informe_lab3.md') }}" class="btn secondary">Descargar informe (MD)</a>
         <a href="{{ url_for('lab3_page') }}" class="btn secondary">Nueva Simulación</a>
         <a href="{{ url_for('index') }}" class="btn secondary">Ir al Inicio</a>
     </div>
@@ -19,8 +21,6 @@
             style="text-align: center; border: 1px solid #e5e7eb; padding: 10px; border-radius: 8px; margin-bottom: 10px;">
             <img src="{{ url_for('serve_fig', subpath=ber_plot|relative_path) }}" alt="Curva BER"
                 style="max-width: 100%; height: auto;">
-            <p class="text-xs text-gray-500 mt-2">DEBUG PATH: {{ ber_plot }}</p>
-            <p class="text-xs text-gray-500">DEBUG URL: {{ url_for('serve_fig', subpath=ber_plot|relative_path) }}</p>
         </div>
         <div style="text-align: center;">
             <a href="{{ url_for('download', out=out, file=ber_plot|basename) }}" class="btn">Descargar Gráfico</a>
