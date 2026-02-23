@@ -107,6 +107,42 @@ Este encadenamiento evita una simulación aislada y mantiene la trazabilidad del
 
 ---
 
+## 🏗️ Arquitectura de Software (Web + DSP)
+
+```mermaid
+flowchart LR
+    classDef web fill:#e0f2fe,stroke:#2563eb,stroke-width:2px,color:#1e3a8a
+    classDef core fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#14532d
+    classDef out fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#78350f
+    classDef doc fill:#ede9fe,stroke:#7c3aed,stroke-width:2px,color:#4c1d95
+
+    U["Usuario (Navegador)"] --> F["Flask UI\n/app/app.py"]
+
+    F --> T1["Templates HTML\n/app/templates/lab1.html\n/app/templates/lab2.html\n/app/templates/lab3.html"]:::web
+    F --> A1["API Lab1\nPOST /api/lab1/run"]:::web
+    F --> A2["API Lab2\nPOST /api/lab2/run"]:::web
+    F --> A3["API Lab3\nPOST /api/lab3/run"]:::web
+    F --> AF["API archivos\nGET /api/files?path=..."]:::web
+
+    A1 --> M1["Core Lab1\n/src/main.py"]:::core
+    A2 --> M2["Core Lab2\n/src/lab2_rrc.py"]:::core
+    A3 --> M3["Core Lab3\n/src/lab3_demod.py"]:::core
+
+    M1 --> O1["outputs_ui/lab1/<timestamp>"]:::out
+    M2 --> O2["outputs_ui/lab2/<timestamp>\niq.bin + bits + figuras"]:::out
+    M3 --> O3["outputs_ui/lab3/<timestamp>\nber_results.csv + figuras"]:::out
+
+    O2 -. "encadenado" .-> M3
+    O1 -. "bits de fuente (opcional)" .-> M2
+
+    O1 --> R1["informe_lab1.md / informe_lab1.pdf"]:::doc
+    O3 --> R3["informe_lab3.md / informe_lab3.pdf"]:::doc
+```
+
+Este diagrama refleja la arquitectura real del repo: Flask orquesta, `src/` procesa DSP y `outputs_ui/` conserva trazabilidad por corrida.
+
+---
+
 ## ✅ Matriz de Cumplimiento (Guía de Informe)
 
 La siguiente tabla indica qué pide la guía y dónde queda evidenciado en el proyecto.
