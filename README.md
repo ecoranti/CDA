@@ -107,6 +107,60 @@ Este encadenamiento evita una simulación aislada y mantiene la trazabilidad del
 
 ---
 
+## 📡 Arquitectura del Sistema de Transmisión (DSP)
+
+```mermaid
+flowchart LR
+    classDef l1 fill:#fee2e2,stroke:#dc2626,stroke-width:2px,color:#7f1d1d
+    classDef l2 fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#14532d
+    classDef ch fill:#ffedd5,stroke:#ea580c,stroke-width:2px,color:#7c2d12
+    classDef l3 fill:#f5f5f5,stroke:#111827,stroke-width:2px,color:#111827
+    classDef eval fill:#eef2ff,stroke:#4338ca,stroke-width:2px,color:#312e81
+
+    subgraph L1["Lab 1: Fuente Digital"]
+        direction TB
+        S1["Fuente de información\n(Audio/Texto)"] --> S2["Muestreo + Cuantización\n(Uniforme o µ-law)"]
+        S2 --> S3["Codificación / Ecualización\n(Huffman o Scrambling)"]
+        S3 --> S4["Bits de salida (Rb)"]
+    end
+
+    subgraph L2["Lab 2: Transmisor Digital"]
+        direction TB
+        T1["Mapeo de símbolos\n(BPSK / QPSK)"] --> T2["Sobremuestreo (sps)"]
+        T2 --> T3["Pulso conformador RRC Tx\n(alpha, span)"]
+        T3 --> T4["Señal IQ transmitida s(t)"]
+    end
+
+    subgraph CH["Canal"]
+        direction TB
+        C1["Canal AWGN\nr(t)=s(t)+n(t)"] --> C2["Señal recibida r(t)"]
+    end
+
+    subgraph L3["Lab 3: Receptor / Detector"]
+        direction TB
+        R1["Filtro acoplado RRC Rx"] --> R2["Muestreo óptimo + sincronía de símbolo"]
+        R2 --> R3["Detector Bayesiano\n(ML/MAP)"]
+        R3 --> R4["Bits reconstruidos"]
+    end
+
+    E1["Evaluación BER vs Eb/N0\n(curva simulada vs teórica)"]:::eval
+
+    S4 --> T1
+    T4 --> C1
+    C2 --> R1
+    R4 --> E1
+    S4 -. "Bits de referencia" .-> E1
+
+    class S1,S2,S3,S4 l1
+    class T1,T2,T3,T4 l2
+    class C1,C2 ch
+    class R1,R2,R3,R4 l3
+```
+
+Este bloque muestra la arquitectura funcional de la cadena Tx/Rx que implementa el proyecto y la métrica final usada en laboratorio (BER).
+
+---
+
 ## 🏗️ Arquitectura de Software (Web + DSP)
 
 ```mermaid
