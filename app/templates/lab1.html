@@ -10,6 +10,7 @@
       <div class="field">
         <label>Texto</label>
         <input name="text" value="{{ defaults.text }}">
+        <span class="muted">El texto ya es digital como archivo, pero en Lab 1 se transforma de caracteres (ASCII/UTF-8) a secuencia binaria (0/1) para alimentar el sistema de comunicacion.</span>
       </div>
       <div class="field">
         <label>Salida</label>
@@ -69,7 +70,291 @@
         </div>
       </details>
     </div>
-    <button class="btn" type="submit">Ejecutar</button>
+
+    <details class="param-guide">
+      <summary>Guía de parámetros (Lab 1)</summary>
+      <div class="hint">Referencia rápida de qué controla cada campo, su valor típico y el efecto esperado al aumentarlo o reducirlo.</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Parámetro</th>
+            <th>Qué controla</th>
+            <th>Valor típico</th>
+            <th>Si aumenta</th>
+            <th>Si disminuye</th>
+            <th>Impacto en etapas siguientes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Audio WAV</strong></td>
+            <td>Archivo fuente de la rama de audio (Fuente A). Señal analógica ya digitalizada que el pipeline re-muestrea, convierte a mono y normaliza.</td>
+            <td>voice.wav, mono, PCM</td>
+            <td>Audio más largo → más muestras → más bits → estadística más robusta y curvas de entropía más estables.</td>
+            <td>Audio más corto → ejecución más rápida, pero con menor evidencia estadística para validar la ecualización.</td>
+            <td>Más bits → mayor carga en el modulador del Lab 2. La distribución de amplitudes del audio determina cuánto trabajo debe hacer el cuantizador.</td>
+          </tr>
+          <tr>
+            <td><strong>Texto</strong></td>
+            <td>Archivo de caracteres ASCII/UTF-8 (Fuente B). Se convierte directamente a bytes y luego a bits 0/1, sin etapa de cuantización.</td>
+            <td>sample_text.txt, UTF-8, ~40 palabras</td>
+            <td>Texto más largo → más bytes → más bits → mejor base estadística para medir entropía y evaluar la ecualización.</td>
+            <td>Texto más corto → menos bits → menor información para comparar técnicas; la curva de entropía puede ser inestable.</td>
+            <td>El ASCII tiene muchos ceros en bits de mayor peso (P(0) ≈ 0.7 antes de ecualizar), lo que hace necesaria la etapa de scrambling antes del Lab 2.</td>
+          </tr>
+          <tr>
+            <td><strong>Salida</strong></td>
+            <td>Directorio donde se guardan figuras, bits serializados (bits_from_lab1.bin), logs e informes del Lab 1.</td>
+            <td>outputs_ui/lab1/</td>
+            <td>No afecta el DSP; solo organiza los resultados en una ruta diferente.</td>
+            <td>Igual: cualquier ruta válida es aceptable.</td>
+            <td>La ruta de salida debe ser conocida por el Lab 2 para poder cargar bits_from_lab1.bin correctamente.</td>
+          </tr>
+          <tr>
+            <td><strong>Frecuencia fs [Hz]</strong></td>
+            <td>Tasa de muestreo objetivo del audio. Se usa resample_poly si el WAV tiene una fs distinta. El teorema de Nyquist exige fs ≥ 2·BW.</td>
+            <td>16000 Hz (voz de calidad, BW ≈ 8 kHz)</td>
+            <td>Mayor fs → mejor representación temporal y espectral, más muestras, mayor tasa de bits de salida.</td>
+            <td>Menor fs → posible aliasing si fs &lt; 2·BW. Para voz telefónica (BW ≈ 4 kHz) basta con 8000 Hz.</td>
+            <td>Mayor fs → mayor tasa binaria → más símbolos a modular en Lab 2. Para voz, 16 kHz es el balance calidad/coste recomendado.</td>
+          </tr>
+          <tr>
+            <td><strong>Bits de cuantización (n_bits)</strong></td>
+            <td>Resolución del cuantizador. Define cuántos niveles = 2^n_bits se usan para representar cada muestra de la señal de audio.</td>
+            <td>8 bits (256 niveles, estándar G.711)</td>
+            <td>Más bits → menor error de cuantización (MSE ↓, SQNR ↑), mayor tasa binaria y mayor ancho de banda requerido.</td>
+            <td>Menos bits → mayor error y ruido de cuantización (MSE ↑, SQNR ↓), menor tasa binaria pero posible degradación audible.</td>
+            <td>Con µ-law, 8 bits dan un SQNR equivalente al de 12–13 bits uniformes para señales de voz. Reducir n_bits aumenta la tasa de error en el receptor del Lab 3.</td>
+          </tr>
+          <tr>
+            <td><strong>Cuantizador</strong></td>
+            <td>Esquema de cuantización: uniforme (niveles lineales), µ-law (companding logarítmico G.711), o ambos para comparación simultánea.</td>
+            <td>µ-law (recomendado para voz)</td>
+            <td>"Ambos" genera gráficas y tablas comparativas de MSE y SQNR para los dos esquemas en paralelo.</td>
+            <td>"Uniforme" simplifica el pipeline pero la voz (distribución Laplaciana) queda con resolución insuficiente en bajas amplitudes.</td>
+            <td>µ-law produce bits más balanceados que el uniforme, reduciendo la carga sobre el scrambler para alcanzar P(0) ≈ P(1).</td>
+          </tr>
+          <tr>
+            <td><strong>µ (solo µ-law)</strong></td>
+            <td>Intensidad del companding logarítmico. Controla cuánto se expanden las amplitudes pequeñas y se comprimen las grandes antes de cuantizar.</td>
+            <td>255 (estándar ITU-T G.711, América del Norte y Japón)</td>
+            <td>µ más alto → más companding → mejor resolución en amplitudes bajas → SQNR más uniforme en todo el rango dinámico.</td>
+            <td>µ → 0 → companding casi nulo → comportamiento casi idéntico al cuantizador uniforme → SQNR varía con la amplitud de la señal.</td>
+            <td>µ=255 maximiza el SQNR para señales de voz (visible en el barrido de SQNR/MSE). Cambiar µ modifica el SQNR pero no la tasa binaria.</td>
+          </tr>
+          <tr>
+            <td><strong>LFSR seed</strong></td>
+            <td>Estado inicial (semilla) del registro de desplazamiento lineal con retroalimentación (LFSR) usado en el scrambler. Debe ser distinto de cero.</td>
+            <td>0b1010110011 (semilla no nula requerida para que el LFSR funcione)</td>
+            <td>Diferente semilla → secuencia PRBS diferente, pero con las mismas propiedades estadísticas si los taps forman un polinomio primitivo.</td>
+            <td>La semilla no puede ser todo ceros (estado nulo del LFSR). Cualquier valor no nulo dentro del rango del bitwidth es válido.</td>
+            <td>Debe usarse la misma semilla en transmisor y receptor para el descrambling correcto en Lab 2/3. Documentar la semilla en el informe.</td>
+          </tr>
+          <tr>
+            <td><strong>LFSR taps (coma)</strong></td>
+            <td>Posiciones de los bits de retroalimentación del LFSR. Determinan el polinomio generador y la calidad pseudoaleatoria de la secuencia PRBS.</td>
+            <td>9,6 (polinomio primitivo para registro de 10 bits → período máximo = 2^10−1 = 1023)</td>
+            <td>Taps correctos (polinomio primitivo) → período máximo → mejor aleatoriedad y balanceo de bits en todo el bloque.</td>
+            <td>Taps incorrectos (polinomio no primitivo) → período reducido → posible repetición de patrones → peor ecualización.</td>
+            <td>Para verificar que los taps forman un polinomio primitivo, consultar tablas de LFSRs de período máximo. El período debe ser ≥ longitud del bloque de bits.</td>
+          </tr>
+          <tr>
+            <td><strong>LFSR bitwidth</strong></td>
+            <td>Longitud del registro del LFSR (número de bits de estado). Determina el período máximo posible de la secuencia PRBS: 2^bitwidth − 1.</td>
+            <td>10 bits (período = 1023 bits)</td>
+            <td>Registro más largo → período potencialmente mayor → la secuencia PRBS tarda más en repetirse → scrambling más efectivo para bloques largos.</td>
+            <td>Registro más corto → período más corto → posible repetición de patrón en bloques grandes → ecualización menos efectiva.</td>
+            <td>Para señales de voz largas (> 1 Mbit) conviene un bitwidth ≥ 20 para evitar que el PRBS se repita y degrade la aleatorización.</td>
+          </tr>
+          <tr>
+            <td><strong>Bins hist amplitud A</strong></td>
+            <td>Número de intervalos del histograma de amplitudes de la señal de audio (antes del formateo). Solo afecta la visualización, no el procesamiento.</td>
+            <td>50 bins</td>
+            <td>Más bins → mayor detalle visual, pero cada bin tiene menos muestras y el histograma puede verse más ruidoso.</td>
+            <td>Menos bins → vista más suave y legible, con menos detalle fino en los extremos de la distribución.</td>
+            <td>Solo afecta la figura de salida. Para voz, 50 bins es suficiente para apreciar la distribución Laplaciana característica (pico en cero, colas cortas).</td>
+          </tr>
+          <tr>
+            <td><strong>Entropía step A</strong></td>
+            <td>Paso en bits para calcular la curva de evolución de entropía de la Fuente A (audio). Define la granularidad temporal de la estimación.</td>
+            <td>10000 bits</td>
+            <td>Paso grande → curva más estable con menos puntos; oculta variaciones locales de entropía entre segmentos de audio.</td>
+            <td>Paso pequeño → curva más detallada y fluctuante; puede revelar segmentos silenciosos o ruidosos con entropía diferente al promedio.</td>
+            <td>La entropía estabilizada cerca de H=1 tras el scrambling confirma que la fuente está lista para el Lab 2. Una curva plana es señal de buena ecualización.</td>
+          </tr>
+          <tr>
+            <td><strong>Entropía step B</strong></td>
+            <td>Paso en bits para calcular la curva de evolución de entropía de la Fuente B (texto). El texto tiene muchos menos bits que el audio.</td>
+            <td>500 bits</td>
+            <td>Paso grande → curva más suave y convergencia más rápida al valor final de entropía.</td>
+            <td>Paso pequeño → curva más ruidosa; útil para ver cómo evoluciona la entropía con el tamaño del bloque de texto analizado.</td>
+            <td>El texto tiene H inicial baja (ej. H≈0.88 para ASCII genérico) y mejora notablemente con scrambling. El gráfico debe mostrar ambas curvas (antes/después) para el informe.</td>
+          </tr>
+          <tr>
+            <td><strong>µ para SQNR/MSE</strong></td>
+            <td>Lista de valores de µ a evaluar en el barrido comparativo de SQNR y MSE. Permite visualizar la sensibilidad del companding al parámetro µ.</td>
+            <td>1,25,50,100,255</td>
+            <td>Más valores en la lista → comparación más completa y curvas más detalladas, a costa de mayor tiempo de cálculo.</td>
+            <td>Menos valores → análisis más rápido, con menor cobertura del espacio de parámetros.</td>
+            <td>El barrido permite demostrar que µ=255 maximiza el SQNR para voz, validando el estándar G.711. Incluir este gráfico en el informe con una tabla de valores numéricos.</td>
+          </tr>
+        </tbody>
+      </table>
+    </details>
+
+
+    <details class="doc-guide">
+      <summary>Documentación técnica (Lab 1)</summary>
+      <p class="intro">Esta sección resume la lógica de procesamiento del Laboratorio 1 para el informe final: cómo se construyen los bits, qué mide cada métrica y cómo interpretar los gráficos. Cubre todos los entregables requeridos por la guía oficial (máx. 4 hojas).</p>
+
+      <div class="doc-grid">
+
+        <div class="doc-card">
+          <h4>1) Objetivo y contexto del Lab 1</h4>
+          <p>El Lab 1 es la <strong>primera etapa</strong> del sistema de comunicaciones digitales: transformar señales de diversas naturalezas en una secuencia binaria equiprobable, lista para modulación y transmisión.</p>
+          <p>El criterio de éxito es lograr <code>P(0) ≈ P(1) ≈ 0.5</code> y <code>H ≈ 1 bit/bit</code>. Una secuencia desbalanceada introduce sesgo DC en la señal modulada y dificulta la recuperación de reloj en el receptor (Lab 3).</p>
+          <ul>
+            <li><strong>Fuente A (voz/audio):</strong> señal analógica → muestreo → cuantización µ-law → codificación binaria.</li>
+            <li><strong>Fuente B (texto):</strong> caracteres ASCII/UTF-8 → bytes → bits 0/1 (sin cuantización, ya es digital).</li>
+            <li><strong>Ecualización:</strong> scrambling LFSR o codificación Huffman para balancear la distribución de bits.</li>
+          </ul>
+        </div>
+
+        <div class="doc-card">
+          <h4>2) Muestreo y normalización (Fuente A)</h4>
+          <p>El muestreo convierte la señal continua en muestras discretas. El <strong>teorema de Nyquist</strong> establece que <code>fs ≥ 2·BW</code> para evitar aliasing. Para voz telefónica (BW ≈ 4 kHz) basta con 8 kHz; para mayor calidad se usa 16 kHz.</p>
+          <p><strong>Pipeline aplicado:</strong></p>
+          <ul>
+            <li>Lectura del WAV y conversión a mono (promedio de canales si es estéreo).</li>
+            <li>Normalización al rango <code>[-1, 1]</code> para evitar saturación en la cuantización.</li>
+            <li>Re-muestreo polifásico (<code>scipy.signal.resample_poly</code>) si fs_original ≠ fs_objetivo.</li>
+          </ul>
+          <p>La señal normalizada exhibe una distribución de amplitudes <strong>aproximadamente Laplaciana</strong> (concentrada cerca de cero, con colas que decaen exponencialmente). Esto motiva el uso de cuantización no uniforme (µ-law) que asigna más niveles donde hay más energía.</p>
+        </div>
+
+        <div class="doc-card">
+          <h4>3) Cuantización uniforme vs µ-law (G.711)</h4>
+          <p><strong>Cuantización uniforme:</strong> divide el rango <code>[-1, 1]</code> en <code>2^n_bits</code> intervalos iguales. Simple, pero ineficiente para voz: la mayoría de la energía está cerca de cero y los niveles extremos se desperdician.</p>
+          <p><strong>Cuantización µ-law:</strong> aplica la transformación logarítmica:</p>
+          <p><code>F(x) = sgn(x) · ln(1 + µ|x|) / ln(1 + µ)</code></p>
+          <p>Esto <em>expande</em> las amplitudes pequeñas (mayor resolución) y <em>comprime</em> las grandes (menor resolución). La cuantización uniforme posterior sobre F(x) queda entonces adaptada a la distribución real de la voz.</p>
+          <ul>
+            <li>Con µ=255 y 8 bits: SQNR ≈ 38–40 dB, casi constante en todo el rango dinámico.</li>
+            <li>Equivalente a ~12–13 bits de cuantización uniforme para señales de voz.</li>
+            <li>Estándar internacional G.711 (América del Norte, Japón y Asia Pacífico).</li>
+          </ul>
+          <p><strong>Para el texto:</strong> al ser ya digital no se aplica cuantización; cada byte se convierte a 8 bits (MSB→LSB). Ej: carácter 'A' (ASCII 65 = 0x41) → 01000001.</p>
+        </div>
+
+        <div class="doc-card">
+          <h4>4) Métricas de calidad de cuantización: MSE y SQNR</h4>
+          <p>El <strong>Error Cuadrático Medio (MSE)</strong> mide la distorsión promedio introducida por la cuantización:</p>
+          <p><code>MSE = (1/N) · Σ (x[n] − x̂[n])²</code></p>
+          <p>donde x[n] es la muestra original y x̂[n] la reconstruida tras cuantizar y decodificar.</p>
+          <p>El <strong>SQNR</strong> (Signal-to-Quantization-Noise Ratio) expresa la calidad en dB:</p>
+          <p><code>SQNR [dB] = 10·log₁₀(P_señal / MSE)</code></p>
+          <ul>
+            <li>Menor MSE → mejor reconstrucción de la señal original.</li>
+            <li>Mayor SQNR → mayor fidelidad percibida. Para voz, SQNR ≥ 30 dB es aceptable.</li>
+            <li>El barrido de µ (1, 25, 50, 100, 255) muestra que µ=255 maximiza el SQNR para distribuciones Laplacianas (voz).</li>
+            <li>Estas métricas evalúan la <em>etapa de cuantización</em>, antes de la ecualización.</li>
+          </ul>
+        </div>
+
+        <div class="doc-card">
+          <h4>5) Histograma de bits y análisis inicial</h4>
+          <p>El histograma de bits inicial muestra la distribución de 0s y 1s en el flujo binario <em>antes</em> de ecualizar. Permite cuantificar el desbalance de cada fuente.</p>
+          <p><strong>Interpretación:</strong> eje X = valor del bit (0 ó 1), eje Y = frecuencia relativa (probabilidad). Una distribución uniforme (barras iguales) indica P(0) = P(1) = 0.5.</p>
+          <p><strong>Resultados típicos experimentales:</strong></p>
+          <ul>
+            <li><strong>Fuente A (µ-law, antes):</strong> P(0)=0.503, P(1)=0.497, H=0.9999 — casi equiprobable gracias al companding.</li>
+            <li><strong>Fuente B (texto, antes):</strong> P(0)=0.70, P(1)=0.30, H=0.88 — fuertemente desbalanceado (el ASCII tiene muchos ceros en bits de mayor peso, p. ej. bit 7 del byte es siempre 0 en ASCII de 7 bits).</li>
+          </ul>
+          <p>El histograma equilibrado tras la ecualización confirma que la fuente está apta para alimentar el modulador del Lab 2 sin introducir sesgo DC ni asimetrías en la constelación.</p>
+        </div>
+
+        <div class="doc-card">
+          <h4>6) Scrambling con LFSR: fundamento y operación</h4>
+          <p>El scrambler aplica XOR bit a bit entre los datos de entrada y una secuencia pseudoaleatoria (PRBS) generada por el LFSR:</p>
+          <p><code>b_scr[k] = b_in[k] ⊕ prbs[k]</code></p>
+          <p>El LFSR (Linear Feedback Shift Register) evoluciona según: <code>s[k] = s[k-1] ⊕ realimentación de los taps</code>. El resultado es una secuencia de período 2^bitwidth − 1 con propiedades estadísticas similares al ruido blanco.</p>
+          <p><strong>Parámetros clave:</strong></p>
+          <ul>
+            <li><strong>Seed:</strong> estado inicial no nulo. Determina la fase de la secuencia.</li>
+            <li><strong>Taps:</strong> polinomio generador. Debe ser primitivo para obtener período máximo.</li>
+            <li><strong>Bitwidth:</strong> largo del registro. Período = 2^bitwidth − 1 bits.</li>
+          </ul>
+          <p><strong>Efectos medidos en el experimento:</strong></p>
+          <ul>
+            <li>Fuente A con scrambling: P(0)=0.5003, H=0.9999997 ≈ ideal.</li>
+            <li>Fuente B con scrambling: P(0)=0.45, P(1)=0.55, H=0.9928 — gran mejora desde H=0.88.</li>
+          </ul>
+          <p><strong>Importante:</strong> el scrambling no comprime ni reduce la tasa de bits. Su función es aleatorizar la secuencia para facilitar la recuperación de reloj y el sincronismo en el receptor. El descrambler del receptor debe usar la misma semilla y los mismos taps.</p>
+        </div>
+
+        <div class="doc-card">
+          <h4>7) Codificación Huffman: compresión como alternativa</h4>
+          <p>La codificación Huffman asigna palabras de código de longitud variable: códigos cortos a símbolos frecuentes y largos a los raros. A diferencia del scrambling, <em>sí comprime</em> la fuente, reduciendo la tasa de bits.</p>
+          <p><strong>Principio:</strong> se construye un árbol binario óptimo (árbol de Huffman) a partir de las probabilidades de los símbolos, garantizando que la longitud media del código se aproxime a la entropía H de la fuente.</p>
+          <p><strong>Trade-off frente al scrambling:</strong></p>
+          <ul>
+            <li><strong>Ventaja de Huffman:</strong> reduce la tasa binaria → menor ancho de banda requerido en transmisión.</li>
+            <li><strong>Desventaja de Huffman:</strong> requiere transmitir la tabla de códigos al receptor → mayor complejidad, overhead y latencia. Sensible a errores de canal (un error puede propagar pérdida de sincronismo).</li>
+            <li><strong>Ventaja del scrambling:</strong> simple, sin latencia, sin metadatos adicionales, robusto a errores de canal.</li>
+            <li><strong>Desventaja del scrambling:</strong> no comprime; la tasa binaria no se reduce.</li>
+          </ul>
+          <p>Para Fuente A (µ-law), la longitud media Huffman fue ≈7.85 bits/símbolo, muy cercana a la entropía H≈1 bit/bit: casi no hay compresión posible cuando la fuente ya es casi uniforme. Para Fuente B (texto), la longitud media fue ≈2.0 bits/símbolo, indicando mayor compresibilidad.</p>
+        </div>
+
+        <div class="doc-card">
+          <h4>8) Entropía: cálculo e interpretación</h4>
+          <p>La <strong>entropía binaria</strong> mide la incertidumbre promedio por símbolo de la fuente (en bits/bit para una fuente binaria):</p>
+          <p><code>H = −[P(0)·log₂P(0) + P(1)·log₂P(1)]</code></p>
+          <p>El <strong>máximo teórico</strong> es H = 1 bit/bit, alcanzado cuando P(0) = P(1) = 0.5 (máxima incertidumbre, fuente equiprobable). Cualquier desbalance reduce H.</p>
+          <p><strong>Curva de evolución de entropía:</strong> se calcula H en bloques sucesivos (según entropy_step_a/b). Una curva plana en H≈1 indica que la secuencia es estacionaria y que el scrambler es efectivo en todo el bloque. Variaciones bruscas revelan segmentos con distribución distinta (silencios, ruido, cambios de locutor).</p>
+          <p><strong>Tabla comparativa de resultados experimentales:</strong></p>
+          <ul>
+            <li>Fuente A antes: H = 0.9999 (µ-law ya balancea bien)</li>
+            <li>Fuente A + scrambling: H = 0.9999997 ≈ ideal</li>
+            <li>Fuente A + Huffman: H = 0.9987 (ligera degradación por cambio de distribución de bits)</li>
+            <li>Fuente B antes: H = 0.88 (desbalanceado)</li>
+            <li>Fuente B + scrambling: H = 0.9928 (gran mejora)</li>
+            <li>Fuente B + Huffman: H = 0.9710</li>
+          </ul>
+        </div>
+
+        <div class="doc-card">
+          <h4>9) Conexión con Lab 2: requisitos de la salida</h4>
+          <p>La salida del Lab 1 es el archivo <code>bits_from_lab1.bin</code>, que contiene la secuencia binaria ecualizada lista para ser mapeada a símbolos IQ en el Lab 2.</p>
+          <p><strong>Requisitos que debe cumplir esta salida para el Lab 2:</strong></p>
+          <ul>
+            <li><strong>P(0) ≈ P(1) ≈ 0.5:</strong> garantiza que la constelación QPSK tenga densidad uniforme en los 4 cuadrantes (sin asimetrías). Si P(0) ≫ P(1), algunos puntos de la constelación aparecen más visitados que otros.</li>
+            <li><strong>H ≈ 1:</strong> máxima eficiencia espectral; sin sesgo DC visible en el espectro de potencia de la señal modulada.</li>
+            <li><strong>Longitud suficiente:</strong> la secuencia debe tener al menos el número de bits configurado en el Lab 2 (parámetro bits_len). Con QPSK, cada símbolo consume 2 bits.</li>
+            <li><strong>Compatibilidad de parámetros:</strong> el Lab 2/3 debe conocer la semilla y taps del LFSR para descrambling (si aplica).</li>
+          </ul>
+        </div>
+
+        <div class="doc-card">
+          <h4>10) Discusión crítica y aplicaciones reales</h4>
+          <p><strong>Aplicaciones del pipeline de Lab 1:</strong></p>
+          <ul>
+            <li><strong>Telefonía digital:</strong> los sistemas PCM µ-law (G.711) y A-law se usan en PSTN, VoIP (G.711 sobre RTP) y sistemas celulares 2G para comprimir voz con calidad garantizada.</li>
+            <li><strong>Transmisión digital:</strong> el scrambling es estándar en sistemas DVB, DOCSIS, LTE y USB 3.0 para garantizar balance de bits y facilitar la recuperación de reloj.</li>
+            <li><strong>Compresión de texto:</strong> Huffman es base de ZIP, DEFLATE, JPEG (tablas Huffman para coeficientes DCT) y protocolos HTTP/2 (HPACK).</li>
+          </ul>
+          <p><strong>Propuestas de mejora:</strong></p>
+          <ul>
+            <li>Evaluar codificación aritmética (más eficiente que Huffman para H muy cercana a 1).</li>
+            <li>Implementar codificación diferencial (DPCM) para reducir correlación entre muestras antes de la cuantización.</li>
+            <li>Extender a entornos de transmisión con canal ruidoso (Lab 3) para medir el impacto real del desbalance en la BER.</li>
+          </ul>
+        </div>
+
+      </div>
+    </details>
+
+      <button class="btn" type="submit">Ejecutar</button>
     <button class="btn secondary" type="button" onclick="presetLab1()">Valores típicos</button>
     <a class="btn secondary" href="{{ url_for('index') }}">Menú principal</a>
   </form>
@@ -100,7 +385,6 @@
       saveLab1ToLS();
     }
 
-    // Persistencia en localStorage de TODOS los campos del formulario de Lab 1
     function formToObj(){
       const g = n => document.querySelector(n);
       return {

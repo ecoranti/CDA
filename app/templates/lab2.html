@@ -132,6 +132,245 @@
       title="Configura la fuente como Audio + Texto">Preset: Ambos</button>
   </div>
 </div>
+
+<details class="param-guide" style="margin-top: 20px;">
+  <summary>Guía de parámetros (Lab 2)</summary>
+  <div class="hint">Referencia rápida de qué controla cada campo del modulador, su valor típico y el efecto esperado al modificarlo. Para los parámetros heredados del Lab 1, ver la guía de parámetros del Lab 1.</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Parámetro</th>
+        <th>Qué controla</th>
+        <th>Valor típico</th>
+        <th>Si aumenta</th>
+        <th>Si disminuye</th>
+        <th>Impacto en etapas siguientes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Modulación</strong></td>
+        <td>Esquema de mapeo bits→símbolos complejos IQ. BPSK: 1 bit/símbolo, 2 puntos en constelación. QPSK: 2 bits/símbolo, 4 puntos.</td>
+        <td>QPSK (balance eficiencia/robustez)</td>
+        <td>QPSK duplica la eficiencia espectral de BPSK: el mismo ancho de banda transporta el doble de información por símbolo.</td>
+        <td>BPSK es más robusto al ruido (mayor distancia entre puntos de constelación para la misma potencia), pero requiere el doble de ancho de banda para la misma tasa de bits.</td>
+        <td>La modulación define la sensibilidad al ruido en el Lab 3: BPSK tolera mayor Eb/N0 antes de errar, QPSK es más eficiente espectralmente.</td>
+      </tr>
+      <tr>
+        <td><strong>Cantidad de bits</strong></td>
+        <td>Número total de bits a modular cuando no se usan bits del Lab 1. Se generan pseudoaleatoriamente con la semilla configurada.</td>
+        <td>2000 bits</td>
+        <td>Más bits → constelación más densa y representativa, espectro más suave, diagrama de ojo con más transiciones visibles.</td>
+        <td>Menos bits → procesamiento más rápido, pero la constelación puede verse dispersa y las estadísticas del espectro menos confiables.</td>
+        <td>Con QPSK, 2000 bits generan 1000 símbolos → 8000 muestras IQ con sps=8. Para curvas BER confiables en Lab 3 se necesitan al menos 50000 bits.</td>
+      </tr>
+      <tr>
+        <td><strong>Samples por símbolo (sps)</strong></td>
+        <td>Factor de oversampling: cuántas muestras IQ representa cada símbolo después del filtro RRC. Determina la resolución temporal de la señal.</td>
+        <td>8 muestras/símbolo</td>
+        <td>Mayor sps → mejor resolución temporal del pulso RRC, diagrama de ojo más nítido, mayor costo computacional y más muestras a procesar en Lab 3.</td>
+        <td>Menor sps → procesamiento más rápido, pero la forma del pulso RRC queda mal representada y el diagrama de ojo pierde definición. Mínimo recomendado: sps=4.</td>
+        <td>El receptor del Lab 3 debe conocer el sps para el muestreo en instantes óptimos. Mayor sps facilita la sincronización de símbolo.</td>
+      </tr>
+      <tr>
+        <td><strong>Roll-off α</strong></td>
+        <td>Factor de exceso de ancho de banda del filtro RRC (Root Raised Cosine). Define el compromiso entre eficiencia espectral e ISI (Interferencia InterSímbolo).</td>
+        <td>0.25 (balance estándar, usado en LTE, DVB-S, QPSK satelital)</td>
+        <td>α mayor → espectro más ancho (menor eficiencia espectral), pero pulso más corto en el tiempo (menor ISI, mayor apertura del ojo, más tolerancia al jitter).</td>
+        <td>α menor → espectro más angosto (mayor eficiencia espectral), pero pulso con colas más largas en el tiempo (mayor ISI si hay desincronización, ojo más cerrado).</td>
+        <td>El receptor del Lab 3 usa el mismo α para construir el filtro acoplado. α=0 → filtro de Nyquist ideal (pulso sinc, banda mínima pero infinito en tiempo). α=1 → banda doble, pulso muy compacto.</td>
+      </tr>
+      <tr>
+        <td><strong>Span del filtro (símbolos)</strong></td>
+        <td>Longitud truncada del pulso RRC, expresada en número de símbolos. El filtro se implementa con span·sps + 1 coeficientes.</td>
+        <td>8 símbolos (64 coeficientes con sps=8)</td>
+        <td>Span mayor → el pulso captura más energía de las colas → respuesta más cercana al RRC ideal → menor ISI residual, pero mayor latencia y costo computacional.</td>
+        <td>Span menor → el pulso está más truncado → mayor ISI residual y distorsión en el diagrama de ojo, pero menor latencia. Mínimo recomendado: span=4.</td>
+        <td>El receiver del Lab 3 debe usar el mismo span para construir el filtro acoplado. Span mayor mejora marginalmente el BER pero aumenta la complejidad del receptor.</td>
+      </tr>
+      <tr>
+        <td><strong>Seed (aleatoriedad)</strong></td>
+        <td>Semilla del generador de números pseudoaleatorios de NumPy. Controla la secuencia de bits generados cuando no se usan bits del Lab 1.</td>
+        <td>0 (reproducible)</td>
+        <td>Diferente semilla → secuencia de bits diferente → constelación y trayectorias IQ distintas, pero mismas propiedades estadísticas promedio.</td>
+        <td>Seed=0 garantiza reproducibilidad exacta de los resultados entre ejecuciones.</td>
+        <td>Irrelevante cuando se usan bits del Lab 1. Para comparar configuraciones del filtro, usar siempre la misma seed para que las diferencias sean atribuibles solo a los parámetros del filtro.</td>
+      </tr>
+      <tr>
+        <td><strong>Fuente para bits</strong></td>
+        <td>Selecciona de dónde provienen los bits: solo audio (Fuente A del Lab 1), solo texto (Fuente B), o concatenación de ambas fuentes.</td>
+        <td>Audio (fuente A, señal de voz µ-law)</td>
+        <td>"Concat" maximiza la cantidad de bits disponibles y combina las características estadísticas de ambas fuentes.</td>
+        <td>"Texto" genera menos bits pero es más rápido; útil para pruebas rápidas de la cadena Lab1→Lab2.</td>
+        <td>Independientemente de la fuente, la ecualización (scrambling) debe garantizar P(0)≈P(1)≈0.5. El histograma de bits l1_bits_hist.png lo confirma.</td>
+      </tr>
+      <tr>
+        <td><strong>Método de ecualización</strong></td>
+        <td>Técnica de ecualización del histograma de bits proveniente del Lab 1: scrambling LFSR (aleatorización XOR) o codificación Huffman (compresión variable).</td>
+        <td>Scrambling (simple, sin latencia)</td>
+        <td>Huffman comprime la fuente → menos bits de entrada al modulador, pero requiere transmitir la tabla de códigos al receptor.</td>
+        <td>Scrambling no comprime pero es más robusto y compatible con sistemas en tiempo real. Preferido para transmisión de voz.</td>
+        <td>Con cualquier método, la auditoría de coherencia (p0=p1=0.5, H=1.0) verifica que la entrada al modulador es estadísticamente óptima.</td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="hint" style="margin-top: 12px;">
+    <strong>Tabla rápida de comparación BPSK vs QPSK:</strong>
+    <table style="margin-top: 8px;">
+      <thead><tr><th>Característica</th><th>BPSK</th><th>QPSK</th></tr></thead>
+      <tbody>
+        <tr><td>Bits por símbolo</td><td>1</td><td>2</td></tr>
+        <tr><td>Puntos en constelación</td><td>2 (±1 en eje I)</td><td>4 (±1, ±j)</td></tr>
+        <tr><td>Eficiencia espectral</td><td>1 bit/s/Hz</td><td>2 bit/s/Hz</td></tr>
+        <tr><td>Componente Q</td><td>≈ 0 (solo eje I)</td><td>Activa (datos en I y Q)</td></tr>
+        <tr><td>Diagrama de ojo (Q)</td><td>Plano en 0 ("ojo vacío")</td><td>Abierto igual que I</td></tr>
+        <tr><td>Robustez al ruido</td><td>Mayor (más distancia entre puntos)</td><td>Menor (misma potencia, 4 puntos)</td></tr>
+        <tr><td>Aplicaciones típicas</td><td>Satélite bajo SNR, deep-space</td><td>DVB-S2, LTE, WiFi, cable</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="hint" style="margin-top: 12px;">
+    <strong>Tabla de comparación de roll-off α (QPSK, sps=8, span=8):</strong>
+    <table style="margin-top: 8px;">
+      <thead><tr><th>α</th><th>Espectro</th><th>Pulso RRC (tiempo)</th><th>Diagrama de ojo</th><th>Uso típico</th></tr></thead>
+      <tbody>
+        <tr><td>0.1</td><td>Muy angosto, bordes casi verticales</td><td>Colas largas, tarda en decaer</td><td>Estrecho, sensible a ISI</td><td>Máxima eficiencia espectral</td></tr>
+        <tr><td>0.25</td><td>Moderado, lóbulos suaves</td><td>Bien contenido</td><td>Equilibrado y limpio</td><td>LTE, DVB-S, QPSK satelital</td></tr>
+        <tr><td>0.5</td><td>Más ancho, transiciones suaves</td><td>Concentrado, colas cortas</td><td>Muy abierto</td><td>Robusto a jitter y desincronización</td></tr>
+        <tr><td>1.0</td><td>Ancho doble respecto a α=0</td><td>Muy compacto, casi sin colas</td><td>Totalmente abierto</td><td>Máxima robustez temporal, mínima eficiencia espectral</td></tr>
+      </tbody>
+    </table>
+  </div>
+</details>
+
+<details class="doc-guide" style="margin-top: 12px;">
+  <summary>Documentación técnica (Lab 2)</summary>
+  <p class="intro">Esta sección describe el pipeline completo de modulación digital del Lab 2: desde los bits del Lab 1 hasta la señal IQ lista para transmisión SDR. Cubre todos los entregables requeridos por la guía oficial.</p>
+
+  <div class="doc-grid">
+
+    <div class="doc-card">
+      <h4>1) Objetivo y contexto del Lab 2</h4>
+      <p>El Lab 2 implementa la <strong>etapa de modulación y conformación espectral</strong> del transmisor digital. A partir de la secuencia binaria ecualizada del Lab 1, se generan muestras IQ filtradas con un pulso de Nyquist tipo RRC, exportables a una SDR.</p>
+      <p>El pipeline completo integrado es:</p>
+      <ul>
+        <li><strong>Lab 1 → Lab 2:</strong> bits_from_lab1.bin (P(0)≈P(1)≈0.5, H≈1) → mapeo a símbolos IQ → filtro RRC → iq.bin (float32 interleaved).</li>
+        <li>La señal iq.bin es compatible con GNU Radio, HackRF, USRP y cualquier SDR que acepte IQ en formato float32.</li>
+        <li>Esta implementación representa el <strong>bloque baseband transmisor</strong> de un sistema real, sin contemplar aún el efecto del canal.</li>
+      </ul>
+    </div>
+
+    <div class="doc-card">
+      <h4>2) Mapeo de bits a símbolos IQ</h4>
+      <p><strong>BPSK:</strong> cada bit se mapea a un punto en el eje real: bit 0 → símbolo −1+0j, bit 1 → símbolo +1+0j. La componente Q permanece en cero. Constelación: 2 puntos sobre el eje I.</p>
+      <p><strong>QPSK con codificación Gray:</strong> cada par de bits (b1, b2) se mapea a un punto en los 4 cuadrantes del plano complejo:</p>
+      <ul>
+        <li>00 → (+1+j)/√2 | 01 → (−1+j)/√2</li>
+        <li>10 → (+1−j)/√2 | 11 → (−1−j)/√2</li>
+      </ul>
+      <p>La codificación Gray garantiza que símbolos adyacentes en la constelación difieran en un solo bit, minimizando errores de bit cuando se confunde un símbolo con su vecino.</p>
+      <p>La normalización por √2 mantiene la potencia media del símbolo en 1 (E[|s|²] = 1), necesaria para que el cálculo de Eb/N0 en el Lab 3 sea correcto.</p>
+    </div>
+
+    <div class="doc-card">
+      <h4>3) Filtro RRC: el pulso formador de onda</h4>
+      <p>El <strong>filtro Raíz de Coseno Alzado (Root Raised Cosine, RRC)</strong> es el pulso conformador estándar para comunicaciones digitales. Su función de transferencia en frecuencia es la raíz cuadrada del coseno alzado (RC):</p>
+      <p><code>H_RRC(f) = √H_RC(f)</code></p>
+      <p>La respuesta del RC en el dominio del tiempo es: <code>h_RC(t) = sinc(t/T)·cos(παt/T) / [1−(2αt/T)²]</code></p>
+      <p>donde T es el período de símbolo y α el factor de roll-off.</p>
+      <p><strong>¿Por qué usar RRC y no RC directamente?</strong> El filtro RRC se aplica tanto en el transmisor (Lab 2) como en el receptor (Lab 3, filtro acoplado). La convolución de dos RRC iguales produce el RC completo, que satisface el criterio de Nyquist (ceros en t = nT para n≠0) → <strong>ISI = 0</strong> en los instantes de muestreo.</p>
+      <p>El ancho de banda total del sistema es: <code>B_T = (1+α) / (2T)</code></p>
+    </div>
+
+    <div class="doc-card">
+      <h4>4) Efecto del roll-off α sobre la señal</h4>
+      <p>El parámetro α (0 ≤ α ≤ 1) controla el exceso de ancho de banda respecto al mínimo de Nyquist:</p>
+      <ul>
+        <li><strong>α = 0:</strong> filtro de Nyquist ideal — banda mínima (B_T = 1/2T), pero el pulso es un sinc infinito en el tiempo (irrealizable en práctica).</li>
+        <li><strong>α = 0.25:</strong> compromiso estándar (LTE, DVB-S2) — banda moderada, pulso bien contenido, diagrama de ojo equilibrado.</li>
+        <li><strong>α = 0.5:</strong> más robusto al jitter — ojo muy abierto, mayor tolerancia a desincronización en muestreo.</li>
+        <li><strong>α = 1:</strong> máximo roll-off — banda doble respecto a α=0, pulso muy compacto (colas casi nulas), máxima apertura del ojo.</li>
+      </ul>
+      <p><strong>Interpretación del diagrama de ojo:</strong> el ojo se forma superponiendo trozos de la señal de duración 2T. Mayor apertura vertical → mayor margen de decisión → menor probabilidad de error ante ruido o jitter.</p>
+    </div>
+
+    <div class="doc-card">
+      <h4>5) Gráficas generadas y cómo interpretarlas</h4>
+      <p><strong>iq_time.png — Señal en el tiempo (I y Q):</strong> muestra las componentes en fase y cuadratura tras el filtro RRC. En BPSK, Q ≈ 0 (solo eje I activo). En QPSK, ambas componentes alternan entre ±1 con transiciones suaves.</p>
+      <p><strong>constellation.png — Diagrama de constelación:</strong> cada punto representa una muestra IQ. En el transmisor ideal (sin canal), los puntos deben agruparse en 2 (BPSK) o 4 (QPSK) nubes bien definidas. La dispersión circular indica muestras correctamente filtradas y normalizadas.</p>
+      <p><strong>spectrum.png — Espectro de potencia (Welch):</strong> muestra la distribución de energía en frecuencia. El perfil clásico del RRC tiene una "meseta" central y bordes de transición suaves cuyo ancho depende de α.</p>
+      <p><strong>rrc_impulse.png — Respuesta impulsiva del RRC:</strong> pico central en t=0 y lóbulos laterales simétricos que decaen. La asimetría o truncamiento visible indica el efecto del span.</p>
+      <p><strong>eye.png — Diagrama de ojo:</strong> el ojo abierto indica baja ISI. En BPSK, la componente Q tiene un ojo "vacío" (plano en 0). En QPSK, ambos ojos deben estar igualmente abiertos (ortogonalidad I/Q).</p>
+      <p><strong>bits_iq_transition.png:</strong> correlación entre el tren de bits del Lab 1 y la señal IQ resultante. Permite verificar el mapeo bit→símbolo→pulso transmitido.</p>
+      <p><strong>l1_bits_hist.png — Histograma de bits Lab1→Lab2:</strong> barras de 0 y 1 prácticamente iguales (p≈0.5) confirman que el scrambler del Lab 1 funciona correctamente y que la fuente es estadísticamente óptima para modulación.</p>
+    </div>
+
+    <div class="doc-card">
+      <h4>6) Exportación IQ y compatibilidad SDR</h4>
+      <p>La señal IQ se exporta en formato <strong>float32 interleaved</strong>: los valores se almacenan como [I₀, Q₀, I₁, Q₁, …, Iₙ, Qₙ] en un archivo binario (.bin).</p>
+      <p>Este formato es compatible con:</p>
+      <ul>
+        <li><strong>GNU Radio:</strong> bloque File Source con tipo complex float.</li>
+        <li><strong>HackRF One / USRP:</strong> transmisión directa mediante osmocom Sink o UHD.</li>
+        <li><strong>SDR#, GQRX:</strong> reproducción y análisis del espectro.</li>
+        <li><strong>Lab 3:</strong> carga directa con numpy.fromfile(dtype=np.complex64) o lectura de pares float32.</li>
+      </ul>
+      <p>El archivo <code>params.json</code> almacena todos los parámetros de la corrida (modulación, sps, α, span, seed, fuente Lab 1), permitiendo reproducibilidad exacta y trazabilidad entre experimentos.</p>
+    </div>
+
+    <div class="doc-card">
+      <h4>7) Auditoría Lab1 → Lab2</h4>
+      <p>La integración Lab1→Lab2 incluye una auditoría automática de coherencia que verifica:</p>
+      <ul>
+        <li><strong>P(0), P(1), H:</strong> confirma que la fuente de bits es equiprobable (P≈0.5, H≈1.0) antes de modular.</li>
+        <li><strong>Hash MD5 de los archivos de entrada:</strong> garantiza que el archivo de audio/texto usado es el correcto y no fue modificado accidentalmente.</li>
+        <li><strong>Metadata de la señal:</strong> número de muestras, duración en segundos, fs utilizada.</li>
+        <li><strong>Preview del texto:</strong> muestra los primeros caracteres del archivo de texto para verificar la fuente.</li>
+      </ul>
+      <p>Si la auditoría reporta P(0) ≠ P(1) o H &lt; 0.99, revisar la configuración del scrambler en el Lab 1 (semilla, taps, bitwidth) y volver a ejecutar antes de proceder al Lab 3.</p>
+    </div>
+
+    <div class="doc-card">
+      <h4>8) Efecto de los parámetros sobre el criterio de Nyquist</h4>
+      <p>El <strong>criterio de Nyquist para transmisión libre de ISI</strong> requiere que la respuesta global del sistema (pulso transmisor × canal ideal × filtro receptor) tenga ceros en los instantes de muestreo t = nT para n ≠ 0.</p>
+      <p>Con el par de filtros RRC (transmisor + receptor del Lab 3):</p>
+      <ul>
+        <li>RRC_tx(f) × RRC_rx(f) = RC(f) → satisface el criterio de Nyquist en frecuencia.</li>
+        <li>El muestreo en los instantes óptimos (múltiplos de T) garantiza ISI = 0.</li>
+        <li>Cualquier error de sincronización temporal (timing offset) introduce ISI residual → el diagrama de ojo se "cierra".</li>
+      </ul>
+      <p>El parámetro span determina qué tan bien se aproxima el filtro truncado al RRC ideal: span grande → menor ISI residual, pero más costoso en cómputo y latencia.</p>
+    </div>
+
+    <div class="doc-card">
+      <h4>9) Discusión técnica y comparación BPSK vs QPSK</h4>
+      <p><strong>Integración Lab1→Lab2:</strong> la transferencia de bits ecualizados desde el formateo a la modulación garantiza una señal con propiedades estadísticas óptimas, minimizando correlaciones y maximizando la eficiencia espectral del sistema.</p>
+      <p><strong>Filtro RRC con α=0.25:</strong> representa el equilibrio entre ancho de banda (eficiencia espectral) y robustez frente al ISI. Es el valor más común en sistemas reales como LTE (3GPP TS 36.211) y DVB-S2 (ETSI EN 302 307).</p>
+      <p><strong>Scrambler LFSR [9,6]:</strong> se verificó que incrementa la entropía desde H≈0.88 (texto) hasta H≈0.9928, evitando repeticiones y garantizando una constelación con densidad uniforme en los 4 cuadrantes.</p>
+      <p><strong>Comparación BPSK vs QPSK a igual potencia:</strong></p>
+      <ul>
+        <li>BPSK: Q debería estar ≈0. El ojo de Q es "vacío" (plano en 0). Espectro: meseta central con caída suave.</li>
+        <li>QPSK: ambos I y Q activos, cada símbolo codifica 2 bits. La densidad de la constelación muestra 4 nubes de puntos en los 4 cuadrantes con distribución uniforme (gracias al scrambling del Lab 1).</li>
+        <li>QPSK tiene la misma BER que BPSK cuando se expresa en función de Eb/N0, pero duplica la eficiencia espectral → mismo error, el doble de datos por unidad de ancho de banda.</li>
+      </ul>
+    </div>
+
+    <div class="doc-card">
+      <h4>10) Qué reportar en el informe final</h4>
+      <ul>
+        <li><strong>Descripción teórica y diagrama de bloques</strong> del transmisor: fuente → scrambling → mapeo IQ → filtro RRC → exportación SDR.</li>
+        <li><strong>Tabla de parámetros configurados</strong> (modulación, n_bits, sps, α, span, fuente Lab 1, método ecualización).</li>
+        <li><strong>Gráficas requeridas:</strong> señal en tiempo (I/Q), constelación de símbolos, espectro de potencia, respuesta impulsiva RRC, diagrama de ojo, bits vs transición IQ, histograma de bits Lab1→Lab2.</li>
+        <li><strong>Comparación BPSK vs QPSK:</strong> análisis de las diferencias en constelación, espectro y diagramas de ojo con la misma fuente de bits.</li>
+        <li><strong>Comparación de roll-off α:</strong> tabla y gráficas para α = 0.1, 0.25, 0.5 (y opcionalmente 0.75 y 1.0) mostrando el impacto en espectro, pulso y diagrama de ojo.</li>
+        <li><strong>Discusión técnica:</strong> criterio de Nyquist, trade-off α, efecto del span, integración con Lab 1, conexión con Lab 3.</li>
+        <li><strong>Auditoría de coherencia:</strong> reportar P(0), P(1), H y confirmar que la fuente de bits es estadísticamente óptima.</li>
+      </ul>
+    </div>
+
+  </div>
+</details>
+
 <p class="muted">α pequeño reduce el ancho de banda pero alarga colas del pulso; α grande ensancha espectro y reduce
   colas (trade-off BW/ISI).</p>
 <h3>Resultados (API)</h3>
@@ -265,32 +504,23 @@
       const l2 = getFormVals();
       const l1 = getLab1Vals();
       saveLab1ToLS();
-      saveLab2ToLS(); // Explicitly save Lab 2 params
+      saveLab2ToLS();
       const payload = { ...l2, lab1: l1 };
-
-      // Feedback inmediato para el usuario
       addFlash('info', `Iniciando simulación Lab 2 con bits de Lab 1... (Fuente: ${l1.source})`);
-
       const r = await fetch('/api/lab2/run_from_lab1', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const j = await r.json();
       if (!j.ok) { throw new Error(j.error || 'Error desconocido'); }
-
-      // Update LocalStorage with the ACTUAL output path (timestamped)
-      // This is crucial for Lab 3 to find the files
       if (j.out) {
         const currentParams = getFormVals();
         currentParams.out = j.out;
         lsSet('lab2_params', currentParams);
       }
-
       renderLab2Results(j.paths, j.audit);
       addFlash('success', `¡Éxito! Simulación Lab 2 Completada usando bits de Lab 1.`);
     } catch (e) { addFlash('error', String(e)); }
     finally { hideOverlay(); }
   }
-  // Lab 2 Persistence
   function getFormVals() {
-    // This function exists above but we need to ensure it covers everything we want to save
     return {
       modulation: document.querySelector('select[name="modulation"]').value,
       sps: parseInt(document.querySelector('input[name="sps"]').value),
@@ -315,18 +545,13 @@
     }
   }
 
-  // Persistencia automática
   window.addEventListener('DOMContentLoaded', () => {
     loadLab1FromLS();
     loadLab2FromLS();
-
-    // Listeners for Lab 1
     ['l1_audio', 'l1_text', 'l1_fs', 'l1_nbits', 'l1_quant', 'l1_source', 'l1_method', 'l1_mu', 'l1_lfsr_seed', 'l1_lfsr_taps', 'l1_lfsr_bitwidth'].forEach(id => {
       const el = document.getElementById(id);
       if (el) { el.addEventListener('change', saveLab1ToLS); }
     });
-
-    // Listeners for Lab 2
     document.querySelectorAll('form input, form select').forEach(el => {
       el.addEventListener('change', saveLab2ToLS);
     });

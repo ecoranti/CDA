@@ -28,6 +28,30 @@
     details.advanced { border:1px solid #e5e7eb; background:#fff; border-radius:8px; padding:10px 12px; }
     details.advanced > summary { cursor:pointer; font-weight:600; color:#334155; margin:-10px -12px 10px; padding:10px 12px; }
     details.advanced[open] { box-shadow: 0 1px 2px rgb(0 0 0 / 4%); }
+
+    .param-guide { margin-top: 14px; border:1px solid #e5e7eb; background:#fff; border-radius:8px; padding:10px 12px; }
+    .param-guide > summary { cursor:pointer; font-weight:600; color:#334155; margin:-10px -12px 10px; padding:10px 12px; }
+    .param-guide .hint { color:#64748b; font-size:12px; margin-bottom:10px; }
+    .param-guide table { width:100%; border-collapse: collapse; font-size: 13px; }
+    .param-guide th, .param-guide td { border-bottom:1px solid #e5e7eb; padding:8px; text-align:left; vertical-align:top; }
+    .param-guide th { background:#f8fafc; color:#334155; font-weight:600; }
+    .param-guide tr:last-child td { border-bottom:none; }
+    @media (max-width: 900px) {
+      .param-guide table { display:block; overflow-x:auto; white-space:nowrap; }
+    }
+
+
+    .doc-guide { margin-top: 14px; border:1px solid #dbeafe; background:#f8fbff; border-radius:8px; padding:10px 12px; }
+    .doc-guide > summary { cursor:pointer; font-weight:700; color:#1e3a8a; margin:-10px -12px 10px; padding:10px 12px; }
+    .doc-guide .intro { color:#334155; font-size:13px; margin: 0 0 10px; }
+    .doc-guide .doc-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:10px; }
+    .doc-guide .doc-card { background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:10px; }
+    .doc-guide h4 { margin:0 0 6px; font-size:14px; color:#0f172a; }
+    .doc-guide p { margin:0 0 8px; font-size:13px; color:#334155; line-height:1.45; }
+    .doc-guide ul { margin:0; padding-left:18px; }
+    .doc-guide li { margin:0 0 6px; color:#334155; font-size:13px; line-height:1.4; }
+    .doc-guide code { background:#eef2ff; color:#1e293b; padding:1px 4px; border-radius:4px; }
+
     /* Spinner overlay */
     .overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.7); display: none; align-items: center; justify-content: center; z-index: 1000; }
     .spinner { width: 42px; height: 42px; border: 4px solid #cbd5e1; border-top-color: #3b82f6; border-radius: 50%; animation: spin 0.8s linear infinite; }
