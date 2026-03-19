@@ -472,7 +472,7 @@ def _run_ber_curve(
 
 
 def run_simulation(params: Lab3Params) -> dict:
-    print(f"Iniciando simulacion Lab3. Mod={params.modulation}, n_bits={params.n_bits}...")
+    print(f"Iniciando simulacion Canal y Rx. Mod={params.modulation}, n_bits={params.n_bits}...")
     mod = params.modulation.upper()
     rng_bits = np.random.default_rng(params.seed)
     bits_tx = rng_bits.integers(0, 2, size=params.n_bits, dtype=np.uint8)
@@ -571,7 +571,7 @@ def run_single(params: Lab3Params, bits: np.ndarray | None = None) -> dict:
 
 def _load_bits_from_lab2_dir(lab2_path: Path, meta: dict) -> tuple[np.ndarray, str]:
     bits_file = None
-    for candidate in ("bits_from_lab1.bin", "bits.bin"):
+    for candidate in ("bits_formateo.bin", "bits_from_lab1.bin", "bits_tx.bin", "bits.bin"):
         c = lab2_path / candidate
         if c.exists():
             bits_file = c
@@ -602,10 +602,12 @@ def run_from_file(lab2_dir: str, ebn0: float, out_dir: str = "outputs/lab3_integ
     lab2_path = Path(lab2_dir)
     params_file = lab2_path / "params.json"
     iq_file = lab2_path / "iq.bin"
+    if not iq_file.exists():
+        iq_file = lab2_path / "iq_tx.bin"
     if not params_file.exists():
         raise FileNotFoundError(f"No se encontro params.json en {lab2_dir}")
     if not iq_file.exists():
-        raise FileNotFoundError(f"No se encontro iq.bin en {lab2_dir}")
+        raise FileNotFoundError(f"No se encontro iq.bin/iq_tx.bin en {lab2_dir}")
 
     with open(params_file, "r", encoding="utf-8") as f:
         meta = json.load(f)
@@ -682,10 +684,12 @@ def run_simulation_from_file(
     lab2_path = Path(lab2_dir)
     params_file = lab2_path / "params.json"
     iq_file = lab2_path / "iq.bin"
+    if not iq_file.exists():
+        iq_file = lab2_path / "iq_tx.bin"
     if not params_file.exists():
         raise FileNotFoundError(f"No se encontro params.json en {lab2_dir}")
     if not iq_file.exists():
-        raise FileNotFoundError(f"No se encontro iq.bin en {lab2_dir}")
+        raise FileNotFoundError(f"No se encontro iq.bin/iq_tx.bin en {lab2_dir}")
 
     with open(params_file, "r", encoding="utf-8") as f:
         meta = json.load(f)
@@ -744,7 +748,7 @@ def run_simulation_from_file(
 
 
 def main():
-    ap = argparse.ArgumentParser("Lab3 - Demodulacion Digital")
+    ap = argparse.ArgumentParser("Canal y Rx - Demodulacion Digital")
     ap.add_argument("--out", default="outputs/lab3")
     ap.add_argument("--n_bits", type=int, default=100000)
     ap.add_argument("--mod", default="QPSK", choices=["BPSK", "QPSK"])

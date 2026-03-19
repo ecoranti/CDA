@@ -1,26 +1,26 @@
-# Plantilla de Presentación (Lab 3)
+# Plantilla de Presentación (Canal y Rx)
 
 Esta plantilla está pensada para una exposición de **35 a 45 minutos**.
-Usá las figuras generadas en la corrida de Lab 3 (`outputs_ui/lab3/<timestamp>/`).
+Usá las figuras generadas en la corrida de Canal y Rx (`outputs_ui/lab3/<timestamp>/`).
 
 ## Slide 1 - Portada
 - Título: *Demodulación Digital: AWGN, Filtro Acoplado y Estimación Bayesiana*
 - Materia, comisión, integrantes, fecha.
 
 ## Slide 2 - Objetivos
-- Emular canal AWGN sobre IQ de Lab 2.
+- Emular canal AWGN sobre IQ de Modulación.
 - Implementar receptor: MF + muestreo + ML/MAP.
 - Obtener BER experimental vs teórica.
 - Analizar trade-offs (BW, ISI, complejidad).
 
-## Slide 3 - Contexto y Encadenamiento Lab 1 -> Lab 2 -> Lab 3
+## Slide 3 - Contexto y Encadenamiento Formateo -> Modulación -> Canal y Rx
 ```mermaid
 flowchart LR
-A["Lab 1: audio/texto -> bits"] --> B["Lab 2: mapeo + RRC -> iq.bin"]
-B --> C["Lab 3: AWGN + MF + decision"]
+A["Formateo: audio/texto -> bits"] --> B["Modulación: mapeo + RRC -> iq.bin"]
+B --> C["Canal y Rx: AWGN + MF + decision"]
 C --> D["BER vs Eb/N0"]
 ```
-- Remarcar: curva BER se calcula sobre salida real de Lab 2.
+- Remarcar: curva BER se calcula sobre salida real de Modulación.
 
 ## Slide 4 - Modelo del Sistema
 - Ecuación del canal: `r[n] = s[n] + w[n]`.
@@ -35,7 +35,7 @@ C --> D["BER vs Eb/N0"]
 - Rango `Eb/N0`: [...]
 - Trials Monte Carlo por punto: `20` o `50`.
 
-## Slide 6 - Señal Transmitida (Lab 2)
+## Slide 6 - Señal Transmitida (Modulación)
 - Insertar: `iq_time.png`, `spectrum.png`, `constellation.png`, `eye_diagram.png`.
 - Comentario corto de calidad de la señal Tx.
 

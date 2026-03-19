@@ -88,6 +88,32 @@
       document.querySelector('main').prepend(m);
       setTimeout(()=>{ m.remove(); }, 6000);
     }
+
+    async function downloadZip(path){
+      if (!path) { addFlash('error', 'Ruta inválida para ZIP.'); return; }
+      try {
+        showOverlay();
+        const res = await fetch(`/api/zip?path=${encodeURIComponent(path)}`);
+        if (!res.ok) {
+          const j = await res.json().catch(() => null);
+          throw new Error((j && j.error) ? j.error : `Error ${res.status}`);
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const base = path.replace(/\/+$/, '').split('/').pop() || 'resultados';
+        a.href = url;
+        a.download = `${base}.zip`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } catch (e) {
+        addFlash('error', String(e));
+      } finally {
+        hideOverlay();
+      }
+    }
     // Auto-attach to all forms for UX feedback
     window.addEventListener('DOMContentLoaded', () => {
       document.querySelectorAll('form').forEach(form => {

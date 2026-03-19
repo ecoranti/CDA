@@ -1,6 +1,7 @@
 from __future__ import annotations
 import os
 import json
+import shutil
 from dataclasses import dataclass, asdict
 from typing import Dict
 
@@ -27,6 +28,17 @@ def save_iq_float32(iq: np.ndarray, path: str) -> None:
     inter[0::2] = iq.real.astype(np.float32)
     inter[1::2] = iq.imag.astype(np.float32)
     inter.tofile(path)
+
+
+def _safe_alias(src: str, dst: str) -> None:
+    if not os.path.exists(src):
+        return
+    if os.path.exists(dst):
+        return
+    try:
+        shutil.copyfile(src, dst)
+    except Exception:
+        pass
 
 
 def rrc_taps(alpha: float, sps: int, span: int) -> np.ndarray:
@@ -242,7 +254,7 @@ def plot_bits_and_iq(bits: np.ndarray, y: np.ndarray, sps: int, modulation: str,
         plt.axvline(k, color='gray', lw=0.4, alpha=0.5)
     plt.ylim(-0.2, 1.2)
     plt.ylabel('Bit')
-    plt.title('Bits (Lab1) y señal IQ (Lab2)')
+    plt.title('Bits (Formateo) y señal IQ (Modulación)')
     plt.grid(True, alpha=0.25)
 
     plt.subplot(2, 1, 2)
@@ -283,6 +295,8 @@ def run_lab2(params: Lab2Params, bits: np.ndarray | None = None) -> Dict[str, st
         "params": os.path.join(params.out_dir, "params.json"),
         "iq_bin": os.path.join(params.out_dir, "iq.bin"),
         "bits_bin": os.path.join(params.out_dir, "bits.bin"),
+        "iq_tx_bin": os.path.join(params.out_dir, "iq_tx.bin"),
+        "bits_tx_bin": os.path.join(params.out_dir, "bits_tx.bin"),
         "rrc_impulse_png": os.path.join(params.out_dir, "rrc_impulse.png"),
         "iq_time_png": os.path.join(params.out_dir, "iq_time.png"),
         "constellation_png": os.path.join(params.out_dir, "constellation.png"),
@@ -299,6 +313,8 @@ def run_lab2(params: Lab2Params, bits: np.ndarray | None = None) -> Dict[str, st
     _save_json(p, paths["params"])
     save_iq_float32(iq, paths["iq_bin"])
     np.asarray(bits, dtype=np.uint8).ravel().tofile(paths["bits_bin"])
+    _safe_alias(paths["iq_bin"], paths["iq_tx_bin"])
+    _safe_alias(paths["bits_bin"], paths["bits_tx_bin"])
     plot_rrc(taps, params.sps, paths["rrc_impulse_png"])
     plot_time_iq(iq, params.sps, paths["iq_time_png"])
     plot_constellation(iq, params.sps, paths["constellation_png"])
@@ -315,7 +331,7 @@ def run_lab2(params: Lab2Params, bits: np.ndarray | None = None) -> Dict[str, st
 
 if __name__ == "__main__":
     import argparse
-    ap = argparse.ArgumentParser("Lab2 – Modulación digital + RRC")
+    ap = argparse.ArgumentParser("Modulación – Modulación digital + RRC")
     ap.add_argument("--out", required=True)
     ap.add_argument("--n_bits", type=int, default=2000)
     ap.add_argument("--mod", choices=["BPSK", "QPSK"], default="QPSK")

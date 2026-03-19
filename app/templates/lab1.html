@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% block content %}
-  <h2>Formateo y Ecualización (Lab 1)</h2>
+  <h2>Formateo y Ecualización (Formateo)</h2>
   <form method="post" action="{{ url_for('lab1_run') }}">
     <div class="row">
       <div class="field">
@@ -10,14 +10,14 @@
       <div class="field">
         <label>Texto</label>
         <input name="text" value="{{ defaults.text }}">
-        <span class="muted">El texto ya es digital como archivo, pero en Lab 1 se transforma de caracteres (ASCII/UTF-8) a secuencia binaria (0/1) para alimentar el sistema de comunicacion.</span>
+        <span class="muted">El texto ya es digital como archivo, pero en Formateo se transforma de caracteres (ASCII/UTF-8) a secuencia binaria (0/1) para alimentar el sistema de comunicacion.</span>
       </div>
       <div class="field">
         <label>Salida</label>
         <input name="out" value="{{ defaults.out_lab1 }}">
       </div>
       <div class="field">
-        <label>Frecuencia fs [Hz]</label>
+        <label>Frecuencia de muestreo fs [Hz]</label>
         <input name="fs" type="number" value="16000">
       </div>
       <div class="field">
@@ -72,7 +72,7 @@
     </div>
 
     <details class="param-guide">
-      <summary>Guía de parámetros (Lab 1)</summary>
+      <summary>Guía de parámetros (Formateo)</summary>
       <div class="hint">Referencia rápida de qué controla cada campo, su valor típico y el efecto esperado al aumentarlo o reducirlo.</div>
       <table>
         <thead>
@@ -92,7 +92,7 @@
             <td>voice.wav, mono, PCM</td>
             <td>Audio más largo → más muestras → más bits → estadística más robusta y curvas de entropía más estables.</td>
             <td>Audio más corto → ejecución más rápida, pero con menor evidencia estadística para validar la ecualización.</td>
-            <td>Más bits → mayor carga en el modulador del Lab 2. La distribución de amplitudes del audio determina cuánto trabajo debe hacer el cuantizador.</td>
+            <td>Más bits → mayor carga en el modulador del Modulación. La distribución de amplitudes del audio determina cuánto trabajo debe hacer el cuantizador.</td>
           </tr>
           <tr>
             <td><strong>Texto</strong></td>
@@ -100,23 +100,23 @@
             <td>sample_text.txt, UTF-8, ~40 palabras</td>
             <td>Texto más largo → más bytes → más bits → mejor base estadística para medir entropía y evaluar la ecualización.</td>
             <td>Texto más corto → menos bits → menor información para comparar técnicas; la curva de entropía puede ser inestable.</td>
-            <td>El ASCII tiene muchos ceros en bits de mayor peso (P(0) ≈ 0.7 antes de ecualizar), lo que hace necesaria la etapa de scrambling antes del Lab 2.</td>
+            <td>El ASCII tiene muchos ceros en bits de mayor peso (P(0) ≈ 0.7 antes de ecualizar), lo que hace necesaria la etapa de scrambling antes del Modulación.</td>
           </tr>
           <tr>
             <td><strong>Salida</strong></td>
-            <td>Directorio donde se guardan figuras, bits serializados (bits_from_lab1.bin), logs e informes del Lab 1.</td>
+            <td>Directorio donde se guardan figuras y logs del Formateo. Los bits formateados se materializan en la etapa de Modulación como <code>bits_formateo.bin</code> (alias <code>bits_from_lab1.bin</code>).</td>
             <td>outputs_ui/lab1/</td>
             <td>No afecta el DSP; solo organiza los resultados en una ruta diferente.</td>
             <td>Igual: cualquier ruta válida es aceptable.</td>
-            <td>La ruta de salida debe ser conocida por el Lab 2 para poder cargar bits_from_lab1.bin correctamente.</td>
+            <td>La ruta de salida se documenta para trazabilidad; la etapa de Modulación genera y guarda <code>bits_formateo.bin</code> como salida encadenada.</td>
           </tr>
           <tr>
-            <td><strong>Frecuencia fs [Hz]</strong></td>
+            <td><strong>Frecuencia de muestreo fs [Hz]</strong></td>
             <td>Tasa de muestreo objetivo del audio. Se usa resample_poly si el WAV tiene una fs distinta. El teorema de Nyquist exige fs ≥ 2·BW.</td>
             <td>16000 Hz (voz de calidad, BW ≈ 8 kHz)</td>
             <td>Mayor fs → mejor representación temporal y espectral, más muestras, mayor tasa de bits de salida.</td>
             <td>Menor fs → posible aliasing si fs &lt; 2·BW. Para voz telefónica (BW ≈ 4 kHz) basta con 8000 Hz.</td>
-            <td>Mayor fs → mayor tasa binaria → más símbolos a modular en Lab 2. Para voz, 16 kHz es el balance calidad/coste recomendado.</td>
+            <td>Mayor fs → mayor tasa binaria → más símbolos a modular en Modulación. Para voz, 16 kHz es el balance calidad/coste recomendado.</td>
           </tr>
           <tr>
             <td><strong>Bits de cuantización (n_bits)</strong></td>
@@ -124,7 +124,7 @@
             <td>8 bits (256 niveles, estándar G.711)</td>
             <td>Más bits → menor error de cuantización (MSE ↓, SQNR ↑), mayor tasa binaria y mayor ancho de banda requerido.</td>
             <td>Menos bits → mayor error y ruido de cuantización (MSE ↑, SQNR ↓), menor tasa binaria pero posible degradación audible.</td>
-            <td>Con µ-law, 8 bits dan un SQNR equivalente al de 12–13 bits uniformes para señales de voz. Reducir n_bits aumenta la tasa de error en el receptor del Lab 3.</td>
+            <td>Con µ-law, 8 bits dan un SQNR equivalente al de 12–13 bits uniformes para señales de voz. Reducir n_bits aumenta la tasa de error en el receptor del Canal y Rx.</td>
           </tr>
           <tr>
             <td><strong>Cuantizador</strong></td>
@@ -148,7 +148,7 @@
             <td>0b1010110011 (semilla no nula requerida para que el LFSR funcione)</td>
             <td>Diferente semilla → secuencia PRBS diferente, pero con las mismas propiedades estadísticas si los taps forman un polinomio primitivo.</td>
             <td>La semilla no puede ser todo ceros (estado nulo del LFSR). Cualquier valor no nulo dentro del rango del bitwidth es válido.</td>
-            <td>Debe usarse la misma semilla en transmisor y receptor para el descrambling correcto en Lab 2/3. Documentar la semilla en el informe.</td>
+            <td>Debe usarse la misma semilla en transmisor y receptor para el descrambling correcto en Modulación/3. Documentar la semilla en el informe.</td>
           </tr>
           <tr>
             <td><strong>LFSR taps (coma)</strong></td>
@@ -180,7 +180,7 @@
             <td>10000 bits</td>
             <td>Paso grande → curva más estable con menos puntos; oculta variaciones locales de entropía entre segmentos de audio.</td>
             <td>Paso pequeño → curva más detallada y fluctuante; puede revelar segmentos silenciosos o ruidosos con entropía diferente al promedio.</td>
-            <td>La entropía estabilizada cerca de H=1 tras el scrambling confirma que la fuente está lista para el Lab 2. Una curva plana es señal de buena ecualización.</td>
+            <td>La entropía estabilizada cerca de H=1 tras el scrambling confirma que la fuente está lista para el Modulación. Una curva plana es señal de buena ecualización.</td>
           </tr>
           <tr>
             <td><strong>Entropía step B</strong></td>
@@ -204,15 +204,15 @@
 
 
     <details class="doc-guide">
-      <summary>Documentación técnica (Lab 1)</summary>
-      <p class="intro">Esta sección resume la lógica de procesamiento del Laboratorio 1 para el informe final: cómo se construyen los bits, qué mide cada métrica y cómo interpretar los gráficos. Cubre todos los entregables requeridos por la guía oficial (máx. 4 hojas).</p>
+      <summary>Documentación técnica (Formateo)</summary>
+      <p class="intro">Esta sección resume la lógica de procesamiento del Etapa de Formateo para el informe final: cómo se construyen los bits, qué mide cada métrica y cómo interpretar los gráficos. Cubre todos los entregables requeridos por la guía oficial (máx. 4 hojas).</p>
 
       <div class="doc-grid">
 
         <div class="doc-card">
-          <h4>1) Objetivo y contexto del Lab 1</h4>
-          <p>El Lab 1 es la <strong>primera etapa</strong> del sistema de comunicaciones digitales: transformar señales de diversas naturalezas en una secuencia binaria equiprobable, lista para modulación y transmisión.</p>
-          <p>El criterio de éxito es lograr <code>P(0) ≈ P(1) ≈ 0.5</code> y <code>H ≈ 1 bit/bit</code>. Una secuencia desbalanceada introduce sesgo DC en la señal modulada y dificulta la recuperación de reloj en el receptor (Lab 3).</p>
+          <h4>1) Objetivo y contexto del Formateo</h4>
+          <p>El Formateo es la <strong>primera etapa</strong> del sistema de comunicaciones digitales: transformar señales de diversas naturalezas en una secuencia binaria equiprobable, lista para modulación y transmisión.</p>
+          <p>El criterio de éxito es lograr <code>P(0) ≈ P(1) ≈ 0.5</code> y <code>H ≈ 1 bit/bit</code>. Una secuencia desbalanceada introduce sesgo DC en la señal modulada y dificulta la recuperación de reloj en el receptor (Canal y Rx).</p>
           <ul>
             <li><strong>Fuente A (voz/audio):</strong> señal analógica → muestreo → cuantización µ-law → codificación binaria.</li>
             <li><strong>Fuente B (texto):</strong> caracteres ASCII/UTF-8 → bytes → bits 0/1 (sin cuantización, ya es digital).</li>
@@ -270,14 +270,14 @@
             <li><strong>Fuente A (µ-law, antes):</strong> P(0)=0.503, P(1)=0.497, H=0.9999 — casi equiprobable gracias al companding.</li>
             <li><strong>Fuente B (texto, antes):</strong> P(0)=0.70, P(1)=0.30, H=0.88 — fuertemente desbalanceado (el ASCII tiene muchos ceros en bits de mayor peso, p. ej. bit 7 del byte es siempre 0 en ASCII de 7 bits).</li>
           </ul>
-          <p>El histograma equilibrado tras la ecualización confirma que la fuente está apta para alimentar el modulador del Lab 2 sin introducir sesgo DC ni asimetrías en la constelación.</p>
+          <p>El histograma equilibrado tras la ecualización confirma que la fuente está apta para alimentar el modulador del Modulación sin introducir sesgo DC ni asimetrías en la constelación.</p>
         </div>
 
         <div class="doc-card">
           <h4>6) Scrambling con LFSR: fundamento y operación</h4>
           <p>El scrambler aplica XOR bit a bit entre los datos de entrada y una secuencia pseudoaleatoria (PRBS) generada por el LFSR:</p>
           <p><code>b_scr[k] = b_in[k] ⊕ prbs[k]</code></p>
-          <p>El LFSR (Linear Feedback Shift Register) evoluciona según: <code>s[k] = s[k-1] ⊕ realimentación de los taps</code>. El resultado es una secuencia de período 2^bitwidth − 1 con propiedades estadísticas similares al ruido blanco.</p>
+          <p>El LFSR (Linear Feedback Shift Register) evoluciona según: <code>s[k] = s[k-1] ⊕ realimentación de los taps</code>. Aquí <strong>bitwidth</strong> es la cantidad de bits de memoria del registro (N). Si el polinomio de taps es primitivo y la semilla no es cero, el período máximo de la secuencia es <code>2^N - 1</code>. Ejemplo: con <code>N=10</code>, el período máximo es <code>2^10 - 1 = 1023</code> bits antes de repetirse. Por eso se dice que el PRBS se parece al ruido blanco en estadística, aunque sigue siendo determinístico.</p>
           <p><strong>Parámetros clave:</strong></p>
           <ul>
             <li><strong>Seed:</strong> estado inicial no nulo. Determina la fase de la secuencia.</li>
@@ -303,7 +303,7 @@
             <li><strong>Ventaja del scrambling:</strong> simple, sin latencia, sin metadatos adicionales, robusto a errores de canal.</li>
             <li><strong>Desventaja del scrambling:</strong> no comprime; la tasa binaria no se reduce.</li>
           </ul>
-          <p>Para Fuente A (µ-law), la longitud media Huffman fue ≈7.85 bits/símbolo, muy cercana a la entropía H≈1 bit/bit: casi no hay compresión posible cuando la fuente ya es casi uniforme. Para Fuente B (texto), la longitud media fue ≈2.0 bits/símbolo, indicando mayor compresibilidad.</p>
+          <p>En términos esperados, Huffman comprime más cuando la fuente tiene redundancia (algunos símbolos aparecen mucho más que otros) y comprime menos cuando la distribución de símbolos es más uniforme. En este laboratorio, la rama de audio cuantizado (según cuantizador y n_bits) y la rama de texto pueden mostrar compresibilidades distintas. El resultado final depende de la configuración elegida (fs, n_bits, cuantizador, µ, fuente y método) y debe analizarse con los valores obtenidos en cada corrida.</p>
         </div>
 
         <div class="doc-card">
@@ -324,33 +324,16 @@
         </div>
 
         <div class="doc-card">
-          <h4>9) Conexión con Lab 2: requisitos de la salida</h4>
-          <p>La salida del Lab 1 es el archivo <code>bits_from_lab1.bin</code>, que contiene la secuencia binaria ecualizada lista para ser mapeada a símbolos IQ en el Lab 2.</p>
-          <p><strong>Requisitos que debe cumplir esta salida para el Lab 2:</strong></p>
+          <h4>9) Conexión con Modulación: requisitos de la salida</h4>
+          <p>La salida del Formateo alimenta la etapa de Modulación, que guarda la secuencia binaria ecualizada como <code>bits_formateo.bin</code> (alias <code>bits_from_lab1.bin</code>) lista para mapearse a símbolos IQ.</p>
+          <p><strong>Requisitos que debe cumplir esta salida para el Modulación:</strong></p>
           <ul>
             <li><strong>P(0) ≈ P(1) ≈ 0.5:</strong> garantiza que la constelación QPSK tenga densidad uniforme en los 4 cuadrantes (sin asimetrías). Si P(0) ≫ P(1), algunos puntos de la constelación aparecen más visitados que otros.</li>
             <li><strong>H ≈ 1:</strong> máxima eficiencia espectral; sin sesgo DC visible en el espectro de potencia de la señal modulada.</li>
-            <li><strong>Longitud suficiente:</strong> la secuencia debe tener al menos el número de bits configurado en el Lab 2 (parámetro bits_len). Con QPSK, cada símbolo consume 2 bits.</li>
-            <li><strong>Compatibilidad de parámetros:</strong> el Lab 2/3 debe conocer la semilla y taps del LFSR para descrambling (si aplica).</li>
+            <li><strong>Longitud suficiente:</strong> la secuencia debe tener al menos el número de bits configurado en el Modulación (parámetro bits_len). Con QPSK, cada símbolo consume 2 bits.</li>
+            <li><strong>Compatibilidad de parámetros:</strong> el Modulación/3 debe conocer la semilla y taps del LFSR para descrambling (si aplica).</li>
           </ul>
         </div>
-
-        <div class="doc-card">
-          <h4>10) Discusión crítica y aplicaciones reales</h4>
-          <p><strong>Aplicaciones del pipeline de Lab 1:</strong></p>
-          <ul>
-            <li><strong>Telefonía digital:</strong> los sistemas PCM µ-law (G.711) y A-law se usan en PSTN, VoIP (G.711 sobre RTP) y sistemas celulares 2G para comprimir voz con calidad garantizada.</li>
-            <li><strong>Transmisión digital:</strong> el scrambling es estándar en sistemas DVB, DOCSIS, LTE y USB 3.0 para garantizar balance de bits y facilitar la recuperación de reloj.</li>
-            <li><strong>Compresión de texto:</strong> Huffman es base de ZIP, DEFLATE, JPEG (tablas Huffman para coeficientes DCT) y protocolos HTTP/2 (HPACK).</li>
-          </ul>
-          <p><strong>Propuestas de mejora:</strong></p>
-          <ul>
-            <li>Evaluar codificación aritmética (más eficiente que Huffman para H muy cercana a 1).</li>
-            <li>Implementar codificación diferencial (DPCM) para reducir correlación entre muestras antes de la cuantización.</li>
-            <li>Extender a entornos de transmisión con canal ruidoso (Lab 3) para medir el impacto real del desbalance en la BER.</li>
-          </ul>
-        </div>
-
       </div>
     </details>
 

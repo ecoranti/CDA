@@ -33,12 +33,14 @@ def write_markdown(out_dir: str):
     a_huf = pick("A_bits_hist_huffman") or "figures/A_bits_hist_huffman.png"
     a_cmp = pick("A_bits_hist_compare")
     a_ent = pick("A_entropy_evolution")
+    a_ent_h = pick("A_entropy_evolution_huffman")
 
     b_before = "figures/B_bits_hist_before.png"
     b_scr = "figures/B_bits_hist_scrambled.png"
     b_huf = "figures/B_bits_hist_huffman.png"
     b_cmp = "figures/B_bits_hist_compare.png"
     b_ent = "figures/B_entropy_evolution.png"
+    b_ent_h = "figures/B_entropy_evolution_huffman.png"
 
     # Cargar métricas si existen para incrustar una tabla
     metrics_path = os.path.join(out_dir, "resumen_metricas.csv")
@@ -51,7 +53,7 @@ def write_markdown(out_dir: str):
             metrics_md = None
 
     parts = []
-    parts.append("# Lab 1 – Formateo & Ecualización del Histograma")
+    parts.append("# Formateo – Formateo & Ecualización del Histograma")
 
     parts.append("\n## 1) Señal original (audio)")
     parts.append("![A_signal_time](figures/A_signal_time.png)")
@@ -85,8 +87,16 @@ def write_markdown(out_dir: str):
     if os.path.exists(os.path.join(out_dir, b_ent)):
         ent_blocks.append(f"- Texto: ![B_entropy]({b_ent})")
     if ent_blocks:
-        parts.append("\n## 6) Evolución de la entropía")
+        parts.append("\n## 6) Evolución de la entropía (original + scrambler)")
         parts.extend(ent_blocks)
+        parts.append("Nota: Huffman se grafica aparte porque sus bits no son equiprobables (H(p) puede bajar).")
+
+    if a_ent_h or os.path.exists(os.path.join(out_dir, b_ent_h)):
+        parts.append("\n## 6.1) Evolución de la entropía (Huffman)")
+        if a_ent_h:
+            parts.append(f"- Audio (Huffman): ![A_entropy_huff]({a_ent_h})")
+        if os.path.exists(os.path.join(out_dir, b_ent_h)):
+            parts.append(f"- Texto (Huffman): ![B_entropy_huff]({b_ent_h})")
 
     # SQNR/MSE si existen
     sqnr_png = os.path.join(out_dir, "sqnr_comparacion.png")
@@ -144,6 +154,7 @@ def write_pdf(out_dir: str):
         from reportlab.lib.units import mm
         from reportlab.lib.styles import getSampleStyleSheet
         from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle
+        from reportlab.lib.utils import ImageReader
         from reportlab.lib import colors
     except Exception as e:
         print(f"[WARN] No se pudo importar reportlab para generar PDF: {e}")
@@ -163,15 +174,17 @@ def write_pdf(out_dir: str):
     styles = getSampleStyleSheet()
     story = []
 
-    story.append(Paragraph("Lab 1 – Formateo & Ecualización del Histograma", styles['Title']))
+    story.append(Paragraph("Formateo – Formateo & Ecualización del Histograma", styles['Title']))
     story.append(Spacer(1, 6*mm))
 
     def add_img(path: str, caption: str):
         if not path or not os.path.exists(path):
             return
-        # Ajuste de ancho con margen
-        iw = W - 30*mm
-        im = Image(path, width=iw, height=None, kind='proportional')
+        # Ajuste proporcional con margen
+        iw, ih = ImageReader(path).getSize()
+        max_w = W - 30*mm
+        scale = max_w / float(iw) if iw else 1.0
+        im = Image(path, width=iw*scale, height=ih*scale)
         story.append(im)
         story.append(Paragraph(caption, styles['Normal']))
         story.append(Spacer(1, 4*mm))
@@ -195,8 +208,14 @@ def write_pdf(out_dir: str):
     # 5) Comparativas y entropía
     add_img(pick("A_bits_hist_compare"), "Comparativa Antes vs Scrambling – Audio")
     add_img(os.path.join(figdir, "B_bits_hist_compare.png"), "Comparativa Antes vs Scrambling – Texto")
-    add_img(pick("A_entropy_evolution"), "Evolución de la entropía – Audio")
-    add_img(os.path.join(figdir, "B_entropy_evolution.png"), "Evolución de la entropía – Texto")
+    add_img(pick("A_entropy_evolution"), "Evolución de la entropía – Audio (original + scrambler)")
+    add_img(os.path.join(figdir, "B_entropy_evolution.png"), "Evolución de la entropía – Texto (original + scrambler)")
+    story.append(Paragraph("Nota: Huffman se grafica aparte porque sus bits no son equiprobables.", styles['Normal']))
+    story.append(Spacer(1, 4*mm))
+    add_img(pick("A_entropy_evolution_huffman"), "Evolución de la entropía – Audio (Huffman)")
+    add_img(os.path.join(figdir, "B_entropy_evolution_huffman.png"), "Evolución de la entropía – Texto (Huffman)")
+    story.append(Paragraph("Nota: la curva incluye original, scrambler y huffman (cuando estén disponibles).", styles['Normal']))
+    story.append(Spacer(1, 4*mm))
 
     # 6) Métricas de cuantización
     add_img(os.path.join(out_dir, "sqnr_comparacion.png"), "Comparación de SQNR (dB)")

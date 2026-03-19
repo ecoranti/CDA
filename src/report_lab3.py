@@ -25,10 +25,10 @@ def _md_rel(path: str, out_dir: str) -> str:
 def write_markdown(out_dir: str) -> str:
     """Genera informe_lab3.md con la estructura pedida por la guía."""
     parts: list[str] = []
-    parts.append("# Lab 3 – Demodulación Digital (Canal AWGN + Filtro Acoplado + Estimación Bayesiana)")
+    parts.append("# Canal y Rx – Demodulación Digital (Canal AWGN + Filtro Acoplado + Estimación Bayesiana)")
     parts.append("")
     parts.append("## 1) Descripción teórica y diagrama de bloques")
-    parts.append("Cadena completa utilizada: **Lab 2 (Tx IQ) -> Canal AWGN -> Filtro acoplado (RRC) -> Muestreo óptimo -> Decisión ML/MAP -> BER**.")
+    parts.append("Cadena completa utilizada: **Modulación (Tx IQ) -> Canal AWGN -> Filtro acoplado (RRC) -> Muestreo óptimo -> Decisión ML/MAP -> BER**.")
     parts.append("")
     parts.append("## 2) Curva Pb(Eb/N0) experimental vs teórica")
     p = _first_existing(out_dir, ["ber_curve.png"])
@@ -97,7 +97,7 @@ def write_markdown(out_dir: str) -> str:
 
 
 def write_pdf(out_dir: str) -> str | None:
-    """Genera informe_lab3.pdf a partir de salidas del Lab 3."""
+    """Genera informe_lab3.pdf a partir de salidas del Canal y Rx."""
     try:
         from reportlab.lib.pagesizes import A4
         from reportlab.lib.styles import getSampleStyleSheet
@@ -106,7 +106,7 @@ def write_pdf(out_dir: str) -> str | None:
         from reportlab.lib import colors
         from reportlab.lib.utils import ImageReader
     except Exception as e:
-        print(f"[WARN] No se pudo importar reportlab para PDF Lab3: {e}")
+        print(f"[WARN] No se pudo importar reportlab para PDF Canal y Rx: {e}")
         return None
 
     pdf_path = os.path.join(out_dir, "informe_lab3.pdf")
@@ -115,7 +115,7 @@ def write_pdf(out_dir: str) -> str | None:
     W, _ = A4
     story = []
 
-    story.append(Paragraph("Lab 3 – Demodulación Digital (AWGN + MF + BER)", styles["Title"]))
+    story.append(Paragraph("Canal y Rx – Demodulación Digital (AWGN + MF + BER)", styles["Title"]))
     story.append(Spacer(1, 5 * mm))
 
     def add_img(name: str, caption: str):

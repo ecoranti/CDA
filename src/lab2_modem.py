@@ -1,4 +1,4 @@
-"""Lab 2 – Transmisor digital con modulación y pulso de Nyquist (RRC).
+"""Etapa de Modulación – Transmisor digital con modulación y pulso de Nyquist (RRC).
 
 Genera una secuencia binaria aleatoria, mapea a símbolos complejos IQ según la
 modulación seleccionada, conforma el pulso usando un filtro Root Raised Cosine y

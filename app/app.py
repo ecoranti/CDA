@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 import os
+import shutil
+import threading
+import uuid
+import subprocess
+import tempfile
 from pathlib import Path
 import sys
 from typing import Optional
@@ -33,13 +38,15 @@ def create_app() -> Flask:
     app.secret_key = "cda-key"
 
     ROOT = Path(__file__).resolve().parent.parent
+
+
     DEFAULTS = {
-        "audio": str(ROOT / "data/voice.wav"),
-        "text": str(ROOT / "data/sample_text.txt"),
-        "out_lab1": str(ROOT / "outputs_ui/lab1"),
-        "out_lab2": str(ROOT / "outputs_ui/lab2"),
-        "out_lab3": str(ROOT / "outputs_ui/lab3"),
-    }
+            "audio": str(ROOT / "data/voice.wav"),
+            "text": str(ROOT / "data/sample_text.txt"),
+            "out_lab1": str(ROOT / "outputs_ui/lab1"),
+            "out_lab2": str(ROOT / "outputs_ui/lab2"),
+            "out_lab3": str(ROOT / "outputs_ui/lab3"),
+        }
 
     OUTPUTS_ROOT = ROOT / "outputs_ui"
 
@@ -61,6 +68,14 @@ def create_app() -> Flask:
         with open(path, "a", encoding="utf-8") as f:
             f.write(line.rstrip() + "\n")
 
+    def _safe_alias(src: Path, dst: Path):
+        try:
+            if not src.exists() or dst.exists():
+                return
+            shutil.copyfile(src, dst)
+        except Exception:
+            pass
+
     def _latest_lab2_output_dir(base_lab2: str) -> Optional[str]:
         try:
             root = Path(base_lab2)
@@ -76,6 +91,32 @@ def create_app() -> Flask:
             return str(latest)
         except Exception:
             return None
+
+    def _collect_lab2_runs(base_dir: Path):
+        def _has_iq(p: Path) -> bool:
+            return (p / "iq.bin").exists() or (p / "iq_tx.bin").exists()
+        try:
+            if not base_dir.exists():
+                return []
+            if (base_dir / "params.json").exists() and _has_iq(base_dir):
+                return [(".", base_dir)]
+            runs = []
+            for params in base_dir.rglob("params.json"):
+                run_dir = params.parent
+                if _has_iq(run_dir):
+                    rel = str(run_dir.relative_to(base_dir))
+                    runs.append((rel, run_dir))
+            runs = sorted(runs, key=lambda x: x[0])
+            out = []
+            seen = set()
+            for rel, rd in runs:
+                if rel in seen:
+                    continue
+                seen.add(rel)
+                out.append((rel, rd))
+            return out
+        except Exception:
+            return []
 
     @app.template_filter("relative_path")
     def relative_path_filter(s: str) -> str:
@@ -149,6 +190,84 @@ def create_app() -> Flask:
         # concat
         return (bits_audio or []) + (bits_text or [])
 
+    def _generate_formateo_outputs(out_dir: Path, audio: str, text_path: str, fs: int, n_bits: int, quantizer: str,
+                                  mu: int, lfsr_seed: int, lfsr_taps: tuple[int, ...], lfsr_bitwidth: int,
+                                  hist_bins: int = 50, entropy_step_a: int = 10000, entropy_step_b: int = 500,
+                                  sqnr_mus: list[int] | None = None) -> dict:
+        """Genera las figuras de Formateo dentro de una carpeta específica y retorna rutas relativas."""
+        out_dir.mkdir(parents=True, exist_ok=True)
+        figdir = lab1.ensure_dirs(str(out_dir))
+
+        rows = []
+        rows.extend(lab1.process_audio(
+            audio, figdir, fs_target=fs, n_bits=n_bits, quantizer=quantizer,
+            mu_val=mu, lfsr_seed=lfsr_seed, lfsr_taps=lfsr_taps, lfsr_bitwidth=lfsr_bitwidth,
+            hist_bins=hist_bins, entropy_step=entropy_step_a,
+        ))
+        rows.extend(lab1.process_text(
+            text_path, figdir, lfsr_seed=lfsr_seed, lfsr_taps=lfsr_taps,
+            lfsr_bitwidth=lfsr_bitwidth, entropy_step=entropy_step_b,
+        ))
+
+        # SQNR/MSE comparativos (igual que Formateo)
+        try:
+            x, _ = lab1.load_wav_mono(audio, target_fs=fs)
+            xhat_uni = lab1_sqnr.eval_uniform(x, bits=n_bits)
+            mse_uni = lab1_sqnr.mse(x, xhat_uni)
+            sqnr_uni = lab1_sqnr.sqnr_db(x, xhat_uni)
+
+            mu_vals = sqnr_mus or [1, 25, 50, 100, 255]
+            mses, sqnrs = [], []
+            for mu_val in mu_vals:
+                xhat_mu = lab1_sqnr.eval_mulaw(x, mu=mu_val, bits=n_bits)
+                mses.append(lab1_sqnr.mse(x, xhat_mu))
+                sqnrs.append(lab1_sqnr.sqnr_db(x, xhat_mu))
+
+            import matplotlib.pyplot as plt
+            labels = ["Uniforme"] + [f"µ={mu_val}" for mu_val in mu_vals]
+            plt.figure()
+            plt.bar(range(len([sqnr_uni] + sqnrs)), [sqnr_uni] + sqnrs)
+            plt.xticks(range(len(labels)), labels)
+            plt.ylabel("SQNR (dB)")
+            plt.title("Comparación de SQNR ({} bits)".format(n_bits))
+            plt.tight_layout()
+            plt.savefig(out_dir / "sqnr_comparacion.png", dpi=140)
+            plt.close()
+
+            plt.figure()
+            plt.bar(range(len([mse_uni] + mses)), [mse_uni] + mses)
+            plt.xticks(range(len(labels)), labels)
+            plt.ylabel("MSE")
+            plt.title("Comparación de MSE ({} bits)".format(n_bits))
+            plt.tight_layout()
+            plt.savefig(out_dir / "mse_comparacion.png", dpi=140)
+            plt.close()
+        except Exception:
+            pass
+
+        # Guardar métricas CSV para trazabilidad
+        try:
+            lab1_report.save_metrics_csv(str(out_dir), rows)
+        except Exception:
+            pass
+
+        figs = []
+        for p in sorted((Path(figdir)).glob('*.png')):
+            try:
+                figs.append(str(p.relative_to(ROOT)))
+            except Exception:
+                figs.append(str(p))
+        # incluir sqnr/mse si existen
+        for name in ["sqnr_comparacion.png", "mse_comparacion.png"]:
+            p = out_dir / name
+            if p.exists():
+                try:
+                    figs.append(str(p.relative_to(ROOT)))
+                except Exception:
+                    figs.append(str(p))
+        return {"out": str(out_dir), "figs": figs}
+
+
     def _validate_lab1_inputs(audio: str, text: str, out_dir: str, fs: int, n_bits: int, quantizer: str,
                               mu: int, lfsr_seed: int, lfsr_bitwidth: int, hist_bins: int,
                               entropy_step_a: int, entropy_step_b: int, lfsr_taps: tuple[int, ...], sqnr_mus: list[int]):
@@ -188,19 +307,19 @@ def create_app() -> Flask:
         stages = [
             {
                 "id": "lab1",
-                "title": "Formateo (Lab 1)",
+                "title": "Formateo",
                 "desc": "Formateo y ecualización del histograma (scrambling/Huffman)",
                 "link": url_for("lab1_page"),
             },
             {
                 "id": "lab2",
-                "title": "Modulación + RRC (Lab 2)",
+                "title": "Modulación + RRC",
                 "desc": "Transmisor digital, mapeo IQ y pulso de Nyquist",
                 "link": url_for("lab2_page"),
             },
             {
                 "id": "lab3",
-                "title": "Demodulación Digital (Lab 3)",
+                "title": "Canal y Rx",
                 "desc": "Canal AWGN, Filtro Acoplado y Estimación de BER",
                 "link": url_for("lab3_page"),
             },
@@ -248,7 +367,7 @@ def create_app() -> Flask:
             _validate_lab1_inputs(audio, text, out_dir, fs, n_bits, quantizer,
                                   mu, lfsr_seed, lfsr_bitwidth, hist_bins, entropy_step_a, entropy_step_b, lfsr_taps, sqnr_mus)
             log_path = Path(out_dir) / "run_log.txt"
-            _append_log(log_path, f"Lab1 start: audio={audio}, text={text}, fs={fs}, n_bits={n_bits}, quantizer={quantizer}")
+            _append_log(log_path, f"Formateo start: audio={audio}, text={text}, fs={fs}, n_bits={n_bits}, quantizer={quantizer}")
 
             figdir = lab1.ensure_dirs(out_dir)
 
@@ -331,7 +450,7 @@ def create_app() -> Flask:
             })
 
         except Exception as e:
-            flash(f"Error al ejecutar Lab 1: {e}", "error")
+            flash(f"Error al ejecutar Formateo: {e}", "error")
             return redirect(url_for("lab1_page"))
 
         return redirect(url_for("lab1_results", out=out_dir))
@@ -414,9 +533,9 @@ def create_app() -> Flask:
                 "eye_span": eye_span,
                 "eye_traces": eye_traces,
             })
-            _append_log(Path(out_dir) / "run_log.txt", f"Lab2 run OK: {params}")
+            _append_log(Path(out_dir) / "run_log.txt", f"Modulación run OK: {params}")
         except Exception as e:
-            flash(f"Error al ejecutar Lab 2: {e}", "error")
+            flash(f"Error al ejecutar Modulación: {e}", "error")
             return redirect(url_for("lab2_page"))
 
         return redirect(url_for("lab2_results", out=out_dir))
@@ -470,96 +589,160 @@ def create_app() -> Flask:
         except Exception:
             l1_taps = (9, 6)
         l1_bitwidth = _parse_int_auto(l1.get("lfsr_bitwidth"), 10)
+        # Generar figuras de Formateo para encadenado (una vez por corrida)
+        formateo_dir = base_abs / "formateo"
+        formateo_payload = _generate_formateo_outputs(
+            formateo_dir, audio, text, fs, n_bits, quantizer,
+            l1_mu, l1_seed, l1_taps, l1_bitwidth
+        )
         try:
             if sps <= 0:
                 raise ValueError("sps debe ser > 0")
             if mod not in {"BPSK", "QPSK"}:
                 raise ValueError("Modulación no soportada (use BPSK o QPSK)")
             if not (1 <= n_bits <= 16):
-                raise ValueError("n_bits (Lab1) debe estar entre 1 y 16")
+                raise ValueError("n_bits (Formateo) debe estar entre 1 y 16")
             if quantizer not in {"mulaw", "uniform"}:
-                raise ValueError("quantizer (Lab1) inválido")
-            # Construir bits desde lab1 con parámetros avanzados
-            bits = _build_bits_from_lab1(audio, text, fs, n_bits, quantizer, source, method,
-                                         mu=l1_mu, lfsr_seed=l1_seed, lfsr_taps=l1_taps, lfsr_bitwidth=l1_bitwidth)
-            if len(bits) == 0:
-                raise ValueError("La secuencia de bits construida está vacía")
-
-            # Guardar bits crudos (0/1 por byte) para trazabilidad Lab2->Lab3.
+                raise ValueError("quantizer (Formateo) inválido")
+            if method not in {"scrambling", "huffman", "both"}:
+                raise ValueError("method (Formateo) inválido")
+            # Construir bits desde Formateo con parámetros avanzados
             import numpy as _np
-            bf = base_abs / "bits_from_lab1.bin"
-            _np.asarray(bits, dtype=_np.uint8).ravel().tofile(bf)
-            # Histograma y métricas para auditar origen de bits
-            try:
-                plot_hist_bits(bits, "Bits (Lab1→Lab2)", str(base_abs / "l1_bits_hist.png"), as_probability=True)
-            except Exception:
-                pass
-            from src.bits_utils import bits_entropy_stats as _bes
-            p0, p1, H, var = _bes(bits)
-            audit = {"bits": {"count": len(bits), "p0": float(p0), "p1": float(p1), "H": float(H), "var": float(var),
-                               "source": source, "method": method}}
-            # Info de archivos de entrada (md5, tamaño, duración)
-            import hashlib
-            if source in {"audio", "concat"}:
-                try:
-                    h = hashlib.md5()
-                    with open(audio, 'rb') as _f:
-                        h.update(_f.read())
-                    x, _ = load_wav_mono(audio, target_fs=fs)
-                    audit["audio"] = {
-                        "path": audio,
-                        "md5": h.hexdigest(),
-                        "fs_target": fs,
-                        "samples": int(len(x)),
-                        "duration_s": float(len(x) / float(fs)) if fs else None,
-                    }
-                except Exception as _e:
-                    audit["audio_error"] = str(_e)
-            if source in {"text", "concat"}:
-                try:
-                    h = hashlib.md5()
-                    b = open(text, 'rb').read()
-                    h.update(b)
-                    preview = open(text, 'r', encoding='utf-8', errors='ignore').read(200)
-                    audit["text"] = {"path": text, "md5": h.hexdigest(), "bytes": len(b), "preview": preview}
-                except Exception as _e:
-                    audit["text_error"] = str(_e)
-            # Parámetros
-            _write_json(base_abs / "params.json", {
-                "lab2": {"modulation": mod, "sps": sps, "rolloff": alpha, "span": span, "seed": seed},
-                "lab1": {"audio": audio, "text": text, "fs": fs, "n_bits": n_bits, "quantizer": quantizer,
-                         "source": source, "method": method, "mu": l1_mu, "lfsr_seed": l1_seed,
-                         "lfsr_taps": list(l1_taps), "lfsr_bitwidth": l1_bitwidth},
-                "n_bits_effective": len(bits),
-                "out": str(base_abs),
-                "l1_metrics": audit["bits"],
-            })
 
-            params = lab2_rrc.Lab2Params(
-                out_dir=str(base_abs), n_bits=len(bits), modulation=mod, sps=sps, rolloff=alpha, span=span, seed=seed
-            )
-            paths = lab2_rrc.run_lab2(params, bits=_np.array(bits, dtype=_np.uint8))
-            gen = {}
-            for k, v in paths.items():
-                p = Path(v)
+            def _run_one(label: str, src: str, method_use: str, out_dir_use: Path):
+                bits_local = _build_bits_from_lab1(
+                    audio, text, fs, n_bits, quantizer, src, method_use,
+                    mu=l1_mu, lfsr_seed=l1_seed, lfsr_taps=l1_taps, lfsr_bitwidth=l1_bitwidth
+                )
+                if len(bits_local) == 0:
+                    raise ValueError(f"La secuencia de bits ({tag}) está vacía")
+
+                out_dir_use.mkdir(parents=True, exist_ok=True)
+                bf = out_dir_use / "bits_from_lab1.bin"
+                _np.asarray(bits_local, dtype=_np.uint8).ravel().tofile(bf)
+                bf_alias = out_dir_use / "bits_formateo.bin"
+                _safe_alias(bf, bf_alias)
+
                 try:
-                    gen[k] = str(p.relative_to(ROOT))
+                    plot_hist_bits(bits_local, f"Bits (Formateo→Modulación) [{tag}]", str(out_dir_use / "l1_bits_hist.png"), as_probability=True)
                 except Exception:
-                    gen[k] = str(p)
-            try:
-                gen["bits_bin"] = str(bf.relative_to(ROOT)) if bf.exists() else str(bf)
-            except Exception:
-                gen["bits_bin"] = str(bf)
-            # agregar histograma si existe
-            l1_hist = base_abs / "l1_bits_hist.png"
-            if l1_hist.exists():
+                    pass
+
+                from src.bits_utils import bits_entropy_stats as _bes
+                p0, p1, H, var = _bes(bits_local)
+                audit = {
+                    "bits": {"count": len(bits_local), "p0": float(p0), "p1": float(p1), "H": float(H), "var": float(var),
+                             "source": src, "method": method_use}
+                }
+
+                import hashlib
+                if src in {"audio", "concat"}:
+                    try:
+                        h = hashlib.md5()
+                        with open(audio, 'rb') as _f:
+                            h.update(_f.read())
+                        x, _ = load_wav_mono(audio, target_fs=fs)
+                        audit["audio"] = {
+                            "path": audio,
+                            "md5": h.hexdigest(),
+                            "fs_target": fs,
+                            "samples": int(len(x)),
+                            "duration_s": float(len(x) / float(fs)) if fs else None,
+                        }
+                    except Exception as _e:
+                        audit["audio_error"] = str(_e)
+                if src in {"text", "concat"}:
+                    try:
+                        h = hashlib.md5()
+                        b = open(text, 'rb').read()
+                        h.update(b)
+                        preview = open(text, 'r', encoding='utf-8', errors='ignore').read(200)
+                        audit["text"] = {"path": text, "md5": h.hexdigest(), "bytes": len(b), "preview": preview}
+                    except Exception as _e:
+                        audit["text_error"] = str(_e)
+
+                _write_json(out_dir_use / "params.json", {
+                    "lab2": {"modulation": mod, "sps": sps, "rolloff": alpha, "span": span, "seed": seed},
+                    "lab1": {"audio": audio, "text": text, "fs": fs, "n_bits": n_bits, "quantizer": quantizer,
+                             "source": src, "method": method_use, "mu": l1_mu, "lfsr_seed": l1_seed,
+                             "lfsr_taps": list(l1_taps), "lfsr_bitwidth": l1_bitwidth},
+                    "n_bits_effective": len(bits_local),
+                    "out": str(out_dir_use),
+                    "l1_metrics": audit["bits"],
+                })
+
+                params = lab2_rrc.Lab2Params(
+                    out_dir=str(out_dir_use), n_bits=len(bits_local), modulation=mod, sps=sps, rolloff=alpha, span=span, seed=seed
+                )
+                paths = lab2_rrc.run_lab2(params, bits=_np.array(bits_local, dtype=_np.uint8))
+                gen = {}
+                for k, v in paths.items():
+                    p = Path(v)
+                    try:
+                        gen[k] = str(p.relative_to(ROOT))
+                    except Exception:
+                        gen[k] = str(p)
                 try:
-                    gen["l1_bits_hist"] = str(l1_hist.relative_to(ROOT))
+                    if bf_alias.exists():
+                        gen["bits_formateo_bin"] = str(bf_alias.relative_to(ROOT))
+                    elif bf.exists():
+                        gen["bits_formateo_bin"] = str(bf.relative_to(ROOT))
                 except Exception:
-                    gen["l1_bits_hist"] = str(l1_hist)
-            audit["params"] = {"mu": l1_mu, "lfsr_seed": l1_seed, "lfsr_taps": list(l1_taps), "lfsr_bitwidth": l1_bitwidth,
-                                "fs": fs, "n_bits": n_bits, "quantizer": quantizer, "source": source, "method": method}
-            return jsonify({"ok": True, "out": str(base_abs), "paths": gen, "n_bits": len(bits), "audit": audit})
+                    gen["bits_formateo_bin"] = str(bf_alias if bf_alias.exists() else bf)
+                l1_hist = out_dir_use / "l1_bits_hist.png"
+                if l1_hist.exists():
+                    try:
+                        gen["l1_bits_hist"] = str(l1_hist.relative_to(ROOT))
+                    except Exception:
+                        gen["l1_bits_hist"] = str(l1_hist)
+                audit["params"] = {"mu": l1_mu, "lfsr_seed": l1_seed, "lfsr_taps": list(l1_taps), "lfsr_bitwidth": l1_bitwidth,
+                                    "fs": fs, "n_bits": n_bits, "quantizer": quantizer, "source": src, "method": method_use}
+                return {"paths": gen, "audit": audit, "n_bits": len(bits_local), "out": str(out_dir_use), "label": label}
+
+            source_label = "Audio" if source == "audio" else ("Texto" if source == "text" else "Concat")
+            methods = ["scrambling", "huffman"] if method == "both" else [method]
+
+            if source == "separate":
+                runs = {}
+                for src in ["audio", "text"]:
+                    src_label = "Audio" if src == "audio" else "Texto"
+                    for m in methods:
+                        key = f"{src}_{m}" if method == "both" else src
+                        label = f"{src_label} - {m.title()}" if method == "both" else src_label
+                        out_dir_use = base_abs / src / m if method == "both" else base_abs / src
+                        runs[key] = _run_one(label, src, m, out_dir_use)
+                _write_json(base_abs / "params.json", {
+                    "mode": "separate",
+                    "lab2": {"modulation": mod, "sps": sps, "rolloff": alpha, "span": span, "seed": seed},
+                    "lab1": {"audio": audio, "text": text, "fs": fs, "n_bits": n_bits, "quantizer": quantizer,
+                             "source": source, "method": method, "mu": l1_mu, "lfsr_seed": l1_seed,
+                             "lfsr_taps": list(l1_taps), "lfsr_bitwidth": l1_bitwidth},
+                    "out": str(base_abs),
+                    "runs": {k: v["out"] for k, v in runs.items()},
+                })
+                return jsonify({"ok": True, "out": str(base_abs), "mode": "separate", "runs": runs, "formateo": formateo_payload})
+
+            if method == "both":
+                runs = {}
+                for m in methods:
+                    key = m
+                    label = f"{source_label} - {m.title()}"
+                    out_dir_use = base_abs / m
+                    runs[key] = _run_one(label, source, m, out_dir_use)
+                _write_json(base_abs / "params.json", {
+                    "mode": "both",
+                    "lab2": {"modulation": mod, "sps": sps, "rolloff": alpha, "span": span, "seed": seed},
+                    "lab1": {"audio": audio, "text": text, "fs": fs, "n_bits": n_bits, "quantizer": quantizer,
+                             "source": source, "method": method, "mu": l1_mu, "lfsr_seed": l1_seed,
+                             "lfsr_taps": list(l1_taps), "lfsr_bitwidth": l1_bitwidth},
+                    "out": str(base_abs),
+                    "runs": {k: v["out"] for k, v in runs.items()},
+                })
+                return jsonify({"ok": True, "out": str(base_abs), "mode": "both", "runs": runs, "formateo": formateo_payload})
+
+            # Modo normal (una sola fuente o concat)
+            result = _run_one(source_label, source, method, base_abs)
+            return jsonify({"ok": True, "out": str(base_abs), "paths": result["paths"], "n_bits": result["n_bits"], "audit": result["audit"], "formateo": formateo_payload})
         except Exception as e:
             return jsonify({"ok": False, "error": str(e)}), 400
 
@@ -640,6 +823,141 @@ def create_app() -> Flask:
         except Exception as e:
             return jsonify({"ok": False, "error": str(e)}), 400
 
+    def _write_lab3_status(out_dir: str, job_id: str, state: str, progress: float, message: str) -> None:
+        try:
+            p = Path(out_dir) / "status.json"
+            _write_json(p, {
+                "job_id": job_id,
+                "state": state,
+                "progress": progress,
+                "message": message,
+                "out_dir": out_dir,
+            })
+        except Exception:
+            pass
+
+
+    def _run_lab3_pipeline(
+        base_out: str,
+        lab2_path: str,
+        subrun: str,
+        mod: str,
+        n_bits: int,
+        eb_start: float,
+        eb_end: float,
+        eb_step: float,
+        trials: int,
+        sps: int,
+        seed: int,
+        progress_cb=None,
+    ) -> str:
+        out_dir = str(_ts_dir(Path(base_out)))
+        use_l2_chain = True
+        if trials <= 0:
+            raise ValueError("trials_per_ebn0 debe ser > 0")
+        l2 = lab2_path or _latest_lab2_output_dir(DEFAULTS["out_lab2"])
+        if subrun:
+            l2 = str(Path(l2).joinpath(subrun))
+        if not l2:
+            raise ValueError("No hay salida de Modulación disponible. Ejecutá Modulación primero.")
+        l2_base = Path(l2)
+        runs = _collect_lab2_runs(l2_base)
+        if not runs:
+            raise ValueError("No se encontraron corridas válidas en Modulación.")
+        multi = len(runs) > 1 or (runs and runs[0][0] != ".")
+
+        if multi:
+            runs_meta = []
+            total = len(runs)
+            for i, (rel, rdir) in enumerate(runs, 1):
+                if progress_cb:
+                    progress_cb(i - 1, total, rel)
+                out_sub = Path(out_dir) / rel
+                out_sub.mkdir(parents=True, exist_ok=True)
+                _ = lab3_demod.run_simulation_from_file(
+                    lab2_dir=str(rdir),
+                    out_dir=str(out_sub),
+                    ebn0_start=eb_start,
+                    ebn0_end=eb_end,
+                    ebn0_step=eb_step,
+                    trials_per_ebn0=trials,
+                    seed=seed,
+                )
+                try:
+                    lab3_report.write_markdown(str(out_sub))
+                    lab3_report.write_pdf(str(out_sub))
+                except Exception as _e:
+                    _append_log(out_sub / "run_log.txt", f"[WARN] Informe Canal y Rx no generado: {_e}")
+                ber_plot = out_sub / "ber_curve.png"
+                ber_csv = out_sub / "ber_results.csv"
+                runs_meta.append({
+                    "label": rel,
+                    "lab2_path": str(rdir),
+                    "out_dir": str(out_sub),
+                    "ber_plot": str(ber_plot) if ber_plot.exists() else None,
+                    "ber_csv": str(ber_csv) if ber_csv.exists() else None,
+                })
+
+            if progress_cb:
+                progress_cb(total, total, "final")
+
+            _write_json(Path(out_dir) / "runs.json", {
+                "lab2_base": str(l2_base),
+                "runs": runs_meta,
+            })
+
+            _write_json(Path(out_dir) / "params.json", {
+                "mode": "lab2_chain_multi",
+                "lab2_path": str(l2_base),
+                "n_bits": n_bits,
+                "modulation": mod,
+                "eb_start": eb_start,
+                "eb_end": eb_end,
+                "eb_step": eb_step,
+                "trials_per_ebn0": trials,
+                "sps": sps,
+                "seed": seed,
+                "out": out_dir,
+                "runs": [r[0] for r in runs]
+            })
+
+            _append_log(Path(out_dir) / "run_log.txt", f"Canal y Rx run OK: mode=lab2_chain_multi runs={len(runs_meta)}")
+            return out_dir
+
+        # Single run
+        rdir = runs[0][1]
+        _ = lab3_demod.run_simulation_from_file(
+            lab2_dir=str(rdir),
+            out_dir=out_dir,
+            ebn0_start=eb_start,
+            ebn0_end=eb_end,
+            ebn0_step=eb_step,
+            trials_per_ebn0=trials,
+            seed=seed,
+        )
+
+        _write_json(Path(out_dir) / "params.json", {
+            "mode": "lab2_chain" if use_l2_chain else "standalone",
+            "lab2_path": str(rdir) if use_l2_chain else None,
+            "n_bits": n_bits,
+            "modulation": mod,
+            "eb_start": eb_start,
+            "eb_end": eb_end,
+            "eb_step": eb_step,
+            "trials_per_ebn0": trials,
+            "sps": sps,
+            "seed": seed,
+            "out": out_dir
+        })
+        try:
+            lab3_report.write_markdown(out_dir)
+            lab3_report.write_pdf(out_dir)
+        except Exception as _e:
+            _append_log(Path(out_dir) / "run_log.txt", f"[WARN] Informe Canal y Rx no generado: {_e}")
+        _append_log(Path(out_dir) / "run_log.txt", f"Canal y Rx run OK: mode={'lab2_chain' if use_l2_chain else 'standalone'}")
+        return out_dir
+
+
     @app.get("/lab3")
     def lab3_page():
         return render_template(
@@ -649,78 +967,148 @@ def create_app() -> Flask:
 
     @app.post("/lab3/run")
     def lab3_run():
-        base_out = request.form.get("out") or DEFAULTS["out_lab3"]
-        out_dir = str(_ts_dir(Path(base_out)))
-        use_l2_chain = True
-        lab2_path = (request.form.get("lab2_path") or "").strip()
-        mod = request.form.get("modulation") or "QPSK"
-        n_bits = int(request.form.get("n_bits") or 10000)
-        eb_start = float(request.form.get("eb_start") or 0.0)
-        eb_end = float(request.form.get("eb_end") or 12.0)
-        eb_step = float(request.form.get("eb_step") or 2.0)
-        trials = int(request.form.get("trials_per_ebn0") or 20)
-        sps = int(request.form.get("sps") or 8)
-        seed = int(request.form.get("seed") or 42)
+        base_out = request.values.get("out") or DEFAULTS["out_lab3"]
+        lab2_path = (request.values.get("lab2_path") or "").strip()
+        subrun = (request.values.get("subrun") or "").strip()
+        mod = request.values.get("modulation") or "QPSK"
+        n_bits = int(request.values.get("n_bits") or 10000)
+        eb_start = float(request.values.get("eb_start") or 0.0)
+        eb_end = float(request.values.get("eb_end") or 12.0)
+        eb_step = float(request.values.get("eb_step") or 2.0)
+        trials = int(request.values.get("trials_per_ebn0") or 20)
+        sps = int(request.values.get("sps") or 8)
+        seed = int(request.values.get("seed") or 42)
 
         try:
-            if trials <= 0:
-                raise ValueError("trials_per_ebn0 debe ser > 0")
-            l2 = lab2_path or _latest_lab2_output_dir(DEFAULTS["out_lab2"])
-            if not l2:
-                raise ValueError("No hay salida de Lab 2 disponible. Ejecutá Lab 2 primero.")
-            res = lab3_demod.run_simulation_from_file(
-                lab2_dir=l2,
-                out_dir=out_dir,
-                ebn0_start=eb_start,
-                ebn0_end=eb_end,
-                ebn0_step=eb_step,
-                trials_per_ebn0=trials,
+            out_dir = _run_lab3_pipeline(
+                base_out=base_out,
+                lab2_path=lab2_path,
+                subrun=subrun,
+                mod=mod,
+                n_bits=n_bits,
+                eb_start=eb_start,
+                eb_end=eb_end,
+                eb_step=eb_step,
+                trials=trials,
+                sps=sps,
                 seed=seed,
             )
-            
-            # Save params for UI
-            _write_json(Path(out_dir) / "params.json", {
-                "mode": "lab2_chain" if use_l2_chain else "standalone",
-                "lab2_path": (lab2_path or _latest_lab2_output_dir(DEFAULTS["out_lab2"])) if use_l2_chain else None,
-                "n_bits": n_bits,
-                "modulation": mod,
-                "eb_start": eb_start, 
-                "eb_end": eb_end,
-                "eb_step": eb_step,
-                "trials_per_ebn0": trials,
-                "sps": sps,
-                "seed": seed,
-                "out": out_dir
-            })
-            try:
-                lab3_report.write_markdown(out_dir)
-                lab3_report.write_pdf(out_dir)
-            except Exception as _e:
-                _append_log(Path(out_dir) / "run_log.txt", f"[WARN] Informe Lab3 no generado: {_e}")
-            _append_log(Path(out_dir) / "run_log.txt", f"Lab3 run OK: mode={'lab2_chain' if use_l2_chain else 'standalone'}")
-
         except Exception as e:
-            flash(f"Error al ejecutar Lab 3: {e}", "error")
+            flash(f"Error al ejecutar Canal y Rx: {e}", "error")
             return redirect(url_for("lab3_page"))
 
         return redirect(url_for("lab3_results", out=out_dir))
+
+    @app.post("/api/lab3/run_async")
+    def api_lab3_run_async():
+        data = request.get_json(force=True) or {}
+        base_out = data.get("out") or DEFAULTS["out_lab3"]
+        lab2_path = (data.get("lab2_path") or "").strip()
+        subrun = (data.get("subrun") or "").strip()
+        mod = data.get("modulation") or "QPSK"
+        n_bits = int(data.get("n_bits") or 10000)
+        eb_start = float(data.get("eb_start") or 0.0)
+        eb_end = float(data.get("eb_end") or 12.0)
+        eb_step = float(data.get("eb_step") or 2.0)
+        trials = int(data.get("trials_per_ebn0") or 20)
+        sps = int(data.get("sps") or 8)
+        seed = int(data.get("seed") or 42)
+
+        job_id = uuid.uuid4().hex
+        out_dir = str(_ts_dir(Path(base_out)))
+        _write_lab3_status(out_dir, job_id, "running", 0.0, "Iniciando simulación")
+
+        def _worker():
+            try:
+                def _progress(done, total, label):
+                    if total <= 0:
+                        return
+                    prog = max(0.0, min(1.0, float(done) / float(total)))
+                    if done >= total:
+                        msg = "Finalizando"
+                    else:
+                        msg = f"Procesando {label} ({done+1}/{total})"
+                    _write_lab3_status(out_dir, job_id, "running", prog, msg)
+
+                _run_lab3_pipeline(
+                    base_out=base_out,
+                    lab2_path=lab2_path,
+                    subrun=subrun,
+                    mod=mod,
+                    n_bits=n_bits,
+                    eb_start=eb_start,
+                    eb_end=eb_end,
+                    eb_step=eb_step,
+                    trials=trials,
+                    sps=sps,
+                    seed=seed,
+                    progress_cb=_progress,
+                )
+                _write_lab3_status(out_dir, job_id, "done", 1.0, "Completado")
+            except Exception as e:
+                _write_lab3_status(out_dir, job_id, "error", 0.0, str(e))
+
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+
+        return jsonify({"ok": True, "job_id": job_id, "out_dir": out_dir})
+
+    @app.get("/api/lab3/status")
+    def api_lab3_status():
+        import json
+        out_dir = (request.args.get("out") or "").strip()
+        if not out_dir:
+            return jsonify({"ok": False, "error": "out requerido"}), 400
+        p = Path(out_dir) / "status.json"
+        if not p.exists():
+            return jsonify({"ok": False, "error": "status no encontrado"}), 404
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
+
+        log_tail = None
+        log_path = Path(out_dir) / "run_log.txt"
+        if log_path.exists():
+            try:
+                with open(log_path, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+                log_tail = "".join(lines[-15:])
+            except Exception:
+                log_tail = None
+
+        data["log_tail"] = log_tail
+        return jsonify({"ok": True, "status": data})
 
     @app.get("/lab3/results")
     def lab3_results():
         out_dir = request.args.get("out") or DEFAULTS["out_lab3"]
         p = Path(out_dir)
+
+        runs = None
+        runs_file = p / "runs.json"
+        if runs_file.exists():
+            try:
+                with open(runs_file, "r", encoding="utf-8") as f:
+                    runs = json.load(f)
+            except Exception:
+                runs = None
         
-        # Check specific files
+        # Check specific files (single-run)
         ber_plot_path = p / "ber_curve.png"
         ber_plot = str(ber_plot_path) if ber_plot_path.exists() else None
         ber_csv = "ber_results.csv" if (p / "ber_results.csv").exists() else None
         
         other = []
-        for name in ["params.json", "run_log.txt", "informe_lab3.md", "informe_lab3.pdf"]:
+        for name in ["params.json", "run_log.txt", "informe_lab3.md", "informe_lab3.pdf", "runs.json"]:
             if (p / name).exists():
                 other.append(name)
                 
-        return render_template("lab3_results.html", out=out_dir, ber_plot=ber_plot, ber_csv=ber_csv, other=other)
+        return render_template("lab3_results.html", out=out_dir, ber_plot=ber_plot, ber_csv=ber_csv, other=other, runs=runs)
+
+
+
 
     @app.post("/api/lab3/run_single")
     def api_lab3_run_single():
@@ -784,6 +1172,7 @@ def create_app() -> Flask:
                 except:
                     l1_taps = (9, 6)
                 l1_bitwidth = _parse_int_auto(l1.get("lfsr_bitwidth"), 10)
+        # Generar figuras de Formateo para encadenado (una vez por corrida)
                 
                 # Build bits
                 bits = _build_bits_from_lab1(audio, text, fs, n_bits_l1, quantizer, source, method,
@@ -796,7 +1185,7 @@ def create_app() -> Flask:
                         "text": text if source in ["text","concat"] else None
                     }
             except Exception as e:
-                 return jsonify({"ok": False, "error": f"Lab1 integration error: {e}"}), 400
+                 return jsonify({"ok": False, "error": f"Formateo integration error: {e}"}), 400
 
         # If no bits from Lab 1, use n_bits random
         n_bits_sim = len(bits) if bits else int(data.get("n_bits") or 10000)
@@ -862,6 +1251,73 @@ def create_app() -> Flask:
         except Exception as e:
             return jsonify({"ok": False, "error": str(e)}), 400
 
+    @app.post("/api/open_folder")
+    def api_open_folder():
+        data = request.get_json(silent=True) or {}
+        rel = data.get("path") or request.args.get("path")
+        if not rel:
+            return jsonify({"ok": False, "error": "path requerido"}), 400
+        p = Path(rel)
+        if not p.is_absolute():
+            p = (ROOT / p).resolve()
+        if p.is_file():
+            p = p.parent
+        # Restringir a outputs_ui
+        if not str(p).startswith(str(OUTPUTS_ROOT.resolve())):
+            return jsonify({"ok": False, "error": "Acceso denegado"}), 403
+        if not p.exists() or not p.is_dir():
+            return jsonify({"ok": False, "error": "Carpeta no encontrada"}), 404
+        try:
+            if sys.platform.startswith("darwin"):
+                subprocess.Popen(["open", str(p)])
+            elif sys.platform.startswith("win"):
+                os.startfile(str(p))
+            else:
+                subprocess.Popen(["xdg-open", str(p)])
+            return jsonify({"ok": True})
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
+
+    @app.get("/api/zip")
+    def api_zip():
+        rel = request.args.get("path")
+        if not rel:
+            return jsonify({"ok": False, "error": "path requerido"}), 400
+        p = Path(rel)
+        if not p.is_absolute():
+            p = (ROOT / p).resolve()
+        # Restringir a outputs_ui
+        if not str(p).startswith(str(OUTPUTS_ROOT.resolve())):
+            return jsonify({"ok": False, "error": "Acceso denegado"}), 403
+        if not p.exists() or not p.is_dir():
+            return jsonify({"ok": False, "error": "Carpeta no encontrada"}), 404
+        try:
+            tmp_dir = Path(tempfile.mkdtemp(prefix="cda_zip_"))
+            base_name = tmp_dir / p.name
+            zip_path = shutil.make_archive(str(base_name), "zip", root_dir=str(p))
+            return send_file(zip_path, as_attachment=True, download_name=f"{p.name}.zip")
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
+
+    @app.get("/api/lab2/subruns")
+    def api_lab2_subruns():
+        rel = request.args.get("path")
+        if not rel:
+            return jsonify({"ok": False, "error": "path requerido"}), 400
+        p = Path(rel)
+        if not p.is_absolute():
+            p = (ROOT / p).resolve()
+        # Restringir a outputs_ui
+        if not str(p).startswith(str(OUTPUTS_ROOT.resolve())):
+            return jsonify({"ok": False, "error": "Acceso denegado"}), 403
+        if not p.exists() or not p.is_dir():
+            return jsonify({"ok": False, "error": "Carpeta no encontrada"}), 404
+        runs = _collect_lab2_runs(p)
+        rels = []
+        for rel, _dir in runs:
+            rels.append(rel)
+        return jsonify({"ok": True, "runs": rels})
+
     @app.get("/api/files")
     def api_files():
         rel = request.args.get("path")
@@ -896,24 +1352,25 @@ def create_app() -> Flask:
         # Si subpath empieza con /, Path(subpath) lo toma como absoluto y (ROOT / p) ignora ROOT
         # Debemos asegurar que sea relativo a ROOT.
         if p.is_absolute():
-             try:
-                 p = p.relative_to(ROOT)
-             except ValueError:
-                 # Si no es relativo a ROOT, forzamos
-                 pass
-        
+            try:
+                p = p.relative_to(ROOT)
+            except ValueError:
+                # Si no es relativo a ROOT, forzamos
+                pass
+
         full_path = (ROOT / p).resolve()
         print(f"DEBUG: serve_fig full_path: {full_path}")
-        
+
         directory = full_path.parent
         fname = full_path.name
         if not full_path.exists():
             print(f"ERROR: File not found: {full_path}")
             return "File not found", 404
-            
+
         return send_file(full_path)
 
     return app
+
 
 
 app = create_app()

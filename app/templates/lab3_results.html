@@ -2,8 +2,10 @@
 
 {% block content %}
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-    <h2>Resultados Lab 3</h2>
-    <div style="display: flex; gap: 10px;">
+    <h2>Resultados Canal y Rx</h2>
+    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+        <button class="btn" type="button" onclick="openResultsFolder('{{ out }}')">Abrir carpeta de resultados</button>
+        <button class="btn secondary" type="button" onclick="downloadZip('{{ out }}')">Descargar ZIP completo</button>
         <a href="{{ url_for('download', out=out, file='informe_lab3.pdf') }}" class="btn">Descargar informe (PDF)</a>
         <a href="{{ url_for('download', out=out, file='informe_lab3.md') }}" class="btn secondary">Descargar informe (MD)</a>
         <a href="{{ url_for('lab3_page') }}" class="btn secondary">Nueva Simulación</a>
@@ -11,6 +13,35 @@
     </div>
 </div>
 
+{% if runs %}
+<div class="card" style="margin-bottom: 16px;">
+    <h3>Corridas procesadas (múltiples)</h3>
+    <p class="muted">Se detectaron subcarpetas en Modulación y se procesaron todas. Descargá el ZIP para analizar todo el conjunto.</p>
+    <ul>
+      {% for r in runs.runs %}
+        <li>
+          <strong>{{ r.label }}</strong>
+          {% if r.ber_plot %}
+            — <a href="{{ url_for('api_files') }}?path={{ r.ber_plot|relative_path }}">ber_curve.png</a>
+          {% endif %}
+          {% if r.ber_csv %}
+            — <a href="{{ url_for('api_files') }}?path={{ r.ber_csv|relative_path }}">ber_results.csv</a>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+</div>
+
+<div class="card">
+    <h3>Archivos Generados (raíz)</h3>
+    <ul>
+      {% for f in other %}
+        <li><a href="{{ url_for('download', out=out, file=f) }}">{{ f }}</a></li>
+      {% endfor %}
+    </ul>
+    <div style="margin-top: 10px;" class="muted">Ubicación en disco: <code>{{ out }}</code></div>
+</div>
+{% else %}
 <div class="grid" style="grid-template-columns: 2fr 1fr;">
 
     <!-- Panel Principal: Gráfica BER -->
@@ -74,4 +105,24 @@
         </div>
     </div>
 </div>
+
+<script>
+  async function openResultsFolder(path){
+    try {
+      const res = await fetch('/api/open_folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path })
+      });
+      const j = await res.json();
+      if (!j.ok) {
+        alert(j.error || 'No se pudo abrir la carpeta.');
+      }
+    } catch (e) {
+      alert('No se pudo abrir la carpeta.');
+    }
+  }
+</script>
+
+{% endif %}
 {% endblock %}

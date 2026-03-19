@@ -1,9 +1,10 @@
 {% extends 'base.html' %}
 {% block content %}
-  <h2>Resultados Lab 2</h2>
+  <h2>Resultados Modulación</h2>
   <p class="muted">Directorio de salida: <code>{{ out }}</code></p>
   <p>
-    <a class="btn" href="{{ url_for('lab2_results', out=out) }}">Abrir carpeta de resultados</a>
+    <button class="btn" type="button" onclick="openResultsFolder('{{ out }}')">Abrir carpeta de resultados</button>
+    <button class="btn secondary" type="button" onclick="downloadZip('{{ out }}')">Descargar ZIP completo</button>
     <a class="btn secondary" href="{{ url_for('index') }}">Menú principal</a>
   </p>
   {% if figs %}
@@ -37,4 +38,23 @@
     <a class="btn secondary" href="{{ url_for('lab2_page') }}">Nueva corrida</a>
     <a class="btn secondary" href="{{ url_for('index') }}">Menú principal</a>
   </p>
+
+  <script>
+    async function openResultsFolder(path){
+      try {
+        const res = await fetch('/api/open_folder', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path })
+        });
+        const j = await res.json();
+        if (!j.ok) {
+          alert(j.error || 'No se pudo abrir la carpeta.');
+        }
+      } catch (e) {
+        alert('No se pudo abrir la carpeta.');
+      }
+    }
+  </script>
+
 {% endblock %}

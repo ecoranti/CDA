@@ -2,28 +2,6 @@
 
 {% block content %}
 <style>
-  .tabs {
-    display: flex;
-    border-bottom: 2px solid #e5e7eb;
-    margin-bottom: 20px;
-  }
-  .tab-btn {
-    padding: 10px 20px;
-    border: none;
-    background: none;
-    cursor: pointer;
-    font-size: 15px;
-    font-weight: 600;
-    color: #64748b;
-    border-bottom: 2px solid transparent;
-    margin-bottom: -2px;
-  }
-  .tab-btn.active {
-    color: #3b82f6;
-    border-bottom-color: #3b82f6;
-  }
-  .tab-btn:hover { color: #1e40af; }
-  .hidden { display: none; }
   .metrics-grid {
     display: grid;
     grid-template-columns: repeat(6, 1fr);
@@ -51,477 +29,42 @@
 </style>
 
 <div style="display: flex; justify-content: space-between; align-items: center;">
-  <h2>Laboratorio 3: Demodulación Digital</h2>
+  <h2>Etapa de Canal y Rx: Demodulación Digital</h2>
   <a href="{{ url_for('index') }}" class="btn secondary">Ir al Inicio</a>
 </div>
 
-<div class="tabs">
-  <button class="tab-btn active" onclick="switchTab('interactive')" id="tab-interactive">Análisis Interactivo</button>
-  <button class="tab-btn" onclick="switchTab('ber')" id="tab-ber">Curva BER</button>
-</div>
-
-<!-- Tab: Análisis Interactivo -->
-<div id="content-interactive">
-  <div class="grid" style="grid-template-columns: 1fr 2fr;">
-
-    <!-- Controls -->
-    <div class="card">
-      <h3>Parámetros</h3>
-      <div class="field">
-        <label>Modulación</label>
-        <select id="i_mod">
-          <option value="QPSK" selected>QPSK</option>
-          <option value="BPSK">BPSK</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>Eb/N0 (dB)</label>
-        <input type="number" id="i_ebn0" value="10.0" step="0.5">
-      </div>
-      <div class="field">
-        <label>SPS</label>
-        <input type="number" id="i_sps" value="8">
-      </div>
-      <div class="field">
-        <label>Roll-off (α)</label>
-        <input type="number" id="i_alpha" value="0.25" step="0.05">
-      </div>
-      <div class="field">
-        <label>Bits a Simular</label>
-        <input type="number" id="i_nbits" value="5000">
-      </div>
-
-      <details class="advanced" style="margin-top: 10px;" open>
-        <summary>Integración: Receptor (Lab 3) &larr; Transmisor (Lab 2)</summary>
-
-        <div style="margin: 10px 0; padding: 15px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px;">
-          <label style="display: flex; align-items: center; gap: 10px; font-weight: bold; cursor: pointer;">
-            <input type="checkbox" id="use_l2_results" onchange="toggleL2Mode()" style="width: auto; transform: scale(1.2);">
-            Utilizar Señal Transmitida por Lab 2
-          </label>
-          <p style="margin: 5px 0 0 26px; font-size: 0.9em; color: #166534;">
-            Carga directamente los archivos (iq.bin, params.json) generados en la última corrida del Lab 2.
-            La simulación demodulará esa señal exacta.
-          </p>
-          <div id="l2_info_box" style="margin-top: 10px; margin-left: 26px; font-size: 0.85em; color: #555; display: none;">
-            Ruta detectada: <code id="l2_path_display">...</code>
-          </div>
-        </div>
-
-        <div id="manual_l1_integration" style="opacity: 0.6; margin-top: 15px; border-top: 1px dashed #ccc; padding-top: 10px;">
-          <small><i>Opciones manuales (Solo si NO usas la integración directa de arriba)</i></small>
-          <div class="field" style="margin-top: 5px;">
-            <label>Fuente Lab 1</label>
-            <select id="l1_source">
-              <option value="audio" selected>Audio</option>
-              <option value="text">Texto</option>
-            </select>
-          </div>
-        </div>
-
-        <input type="hidden" id="l1_audio" value="{{ defaults.audio }}">
-        <input type="hidden" id="l1_text" value="{{ defaults.text }}">
-        <input type="hidden" id="l1_fs" value="16000">
-        <input type="hidden" id="l1_nbits" value="8">
-        <input type="hidden" id="l1_quant" value="mulaw">
-        <input type="hidden" id="l1_method" value="scrambling">
-        <input type="hidden" id="l1_mu" value="255">
-        <input type="hidden" id="l1_lfsr_seed" value="0b1010110011">
-        <input type="hidden" id="l1_lfsr_taps" value="9,6">
-        <input type="hidden" id="l1_lfsr_bitwidth" value="10">
-
-        <script>
-          function lsGet(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }
-          function toggleL2Mode() {
-            const chk = document.getElementById('use_l2_results');
-            const info = document.getElementById('l2_info_box');
-            const disp = document.getElementById('l2_path_display');
-            const manualInputs = ['i_mod', 'i_sps', 'i_alpha', 'i_nbits', 'l1_source'];
-            manualInputs.forEach(id => {
-              const el = document.getElementById(id);
-              if (el) el.disabled = chk.checked;
-            });
-            document.getElementById('manual_l1_integration').style.opacity = chk.checked ? '0.6' : '1';
-            if (chk.checked) {
-              const l2 = lsGet('lab2_params', null);
-              if (l2 && l2.out) {
-                disp.innerText = l2.out;
-                info.style.display = 'block';
-              } else {
-                disp.innerText = "No se encontraron resultados de Lab 2. Ejecuta Lab 2 primero.";
-                info.style.display = 'block';
-                chk.checked = false;
-                alert("No hay resultados de Lab 2 guardados. Por favor ve al Lab 2 y ejecuta una simulación completa.");
-                toggleL2Mode();
-              }
-            } else {
-              info.style.display = 'none';
-            }
-          }
-          (function () {
-            const v = lsGet('lab1_params', null);
-            if (v) {
-              if (v.audio) document.getElementById('l1_audio').value = v.audio;
-              if (v.text) document.getElementById('l1_text').value = v.text;
-              if (v.fs) document.getElementById('l1_fs').value = v.fs;
-              if (v.n_bits) document.getElementById('l1_nbits').value = v.n_bits;
-              if (v.quantizer) document.getElementById('l1_quant').value = v.quantizer;
-              if (v.source) document.getElementById('l1_source').value = v.source;
-              if (v.method) document.getElementById('l1_method').value = v.method;
-              if (v.mu) document.getElementById('l1_mu').value = v.mu;
-              if (v.lfsr_seed) document.getElementById('l1_lfsr_seed').value = v.lfsr_seed;
-              if (v.lfsr_taps) document.getElementById('l1_lfsr_taps').value = v.lfsr_taps;
-              if (v.lfsr_bitwidth) document.getElementById('l1_lfsr_bitwidth').value = v.lfsr_bitwidth;
-            }
-            toggleL2Mode();
-          })();
-        </script>
-      </details>
-    </div>
-
-    <div style="flex: 1; display: flex; flex-direction: column;">
-      <div id="metrics-panel" class="card hidden">
-        <div class="metrics-grid">
-          <div class="metric-box">
-            <div class="metric-label">Eb/N0 objetivo</div>
-            <div class="metric-val" id="res-ebn0-target">-</div>
-          </div>
-          <div class="metric-box">
-            <div class="metric-label">Eb/N0 estimado</div>
-            <div class="metric-val" id="res-ebn0-est">-</div>
-          </div>
-          <div class="metric-box">
-            <div class="metric-label">Delta dB</div>
-            <div class="metric-val" id="res-ebn0-delta">-</div>
-          </div>
-          <div class="metric-box">
-            <div class="metric-label">BER</div>
-            <div class="metric-val" id="res-ber">-</div>
-          </div>
-          <div class="metric-box">
-            <div class="metric-label">Errores</div>
-            <div class="metric-val" id="res-errors">-</div>
-          </div>
-          <div class="metric-box">
-            <div class="metric-label">Bits</div>
-            <div class="metric-val" id="res-bits">-</div>
-          </div>
-        </div>
-      </div>
-
-      <div id="graphs-panel" class="hidden">
-        <div class="grid">
-          <div class="card">
-            <h3>Diagrama de Ojo (Rx)</h3>
-            <img id="img-eye" src="" style="width:100%; border-radius:4px;">
-          </div>
-          <div class="card">
-            <h3>Constelación (Rx)</h3>
-            <img id="img-const" src="" style="width:100%; border-radius:4px;">
-          </div>
-        </div>
-        <div class="card" style="margin-top: 16px;">
-          <h3>Constelaciones Tx vs Rx</h3>
-          <img id="img-tx-rx-const" src="" style="width:100%; border-radius:4px;">
-        </div>
-        <div class="grid" style="margin-top: 16px;">
-          <div class="card">
-            <h3>Filtro Acoplado: Respuesta Impulsiva</h3>
-            <img id="img-mf-impulse" src="" style="width:100%; border-radius:4px;">
-          </div>
-          <div class="card">
-            <h3>Filtro Acoplado: Respuesta en Frecuencia</h3>
-            <img id="img-mf-freq" src="" style="width:100%; border-radius:4px;">
-          </div>
-        </div>
-        <div class="card" style="margin-top: 16px;">
-          <h3>Punto de Operación (BER vs Eb/N0)</h3>
-          <img id="img-ber-point" src="" style="width:100%; border-radius:4px;">
-        </div>
-        <div class="card" style="margin-top: 16px;">
-          <h3>Señal en Tiempo (Rx Filtrada)</h3>
-          <img id="img-time" src="" style="width:100%; border-radius:4px;">
-        </div>
-        <div class="card" style="margin-top: 16px;">
-          <h3>Salida del Filtro + Decisión ML/MAP</h3>
-          <img id="img-rx-decision" src="" style="width:100%; border-radius:4px;">
-        </div>
-      </div>
-
-      <div id="loading-panel" class="hidden" style="text-align: center; padding: 40px;">
-        <div class="spinner" style="margin: 0 auto 10px;"></div>
-        <p class="muted">Simulando transmisión y recepción...</p>
-      </div>
-    </div>
-  </div>
-
-  <!-- Guía de parámetros Lab 3 -->
-  <details class="param-guide" style="margin-top: 20px;">
-    <summary>Guía de parámetros (Lab 3)</summary>
-    <div class="hint">Referencia rápida de qué controla cada campo del receptor digital, su valor típico y el efecto esperado al modificarlo.</div>
-    <table>
-      <thead>
-        <tr>
-          <th>Parámetro</th>
-          <th>Qué controla</th>
-          <th>Valor típico</th>
-          <th>Si aumenta</th>
-          <th>Si disminuye</th>
-          <th>Impacto en BER y desempeño</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td><strong>Modulación</strong></td>
-          <td>Esquema de demodulación digital. Debe coincidir con la modulación usada en el Lab 2. Determina el número de puntos en la constelación y la regla de decisión MAP/ML.</td>
-          <td>QPSK (mismo que Lab 2)</td>
-          <td>QPSK: el receptor toma decisiones sobre 4 regiones del plano complejo (cuadrantes). Mayor eficiencia espectral pero más sensible al ruido.</td>
-          <td>BPSK: el receptor solo decide en el eje real (I). Más simple, menor BER para el mismo Eb/N0, pero menor eficiencia espectral.</td>
-          <td>Si la modulación del receptor no coincide con la del transmisor, la BER será ≈0.5 (decisiones aleatorias). Verificar consistencia Lab2→Lab3.</td>
-        </tr>
-        <tr>
-          <td><strong>Eb/N0 (dB)</strong></td>
-          <td>Relación entre la energía por bit y la densidad espectral unilateral de ruido. Es el parámetro fundamental de calidad en sistemas digitales. El canal AWGN se inyecta con la potencia de ruido calculada a partir de este valor.</td>
-          <td>10.0 dB (BER muy baja para QPSK)</td>
-          <td>Mayor Eb/N0 → menor ruido relativo a la señal → constelación más compacta → BER más baja → el sistema opera mejor.</td>
-          <td>Menor Eb/N0 → más ruido → puntos de constelación más dispersos → BER más alta. A Eb/N0 = 0 dB, la BER de QPSK es ≈ 0.079.</td>
-          <td>Para QPSK teórico: BER = Q(√(2·Eb/N0)). A 10 dB: BER ≈ 3.8×10⁻⁶. La curva BER del Lab 3 debe aproximarse a esta expresión teórica.</td>
-        </tr>
-        <tr>
-          <td><strong>SPS (samples por símbolo)</strong></td>
-          <td>Factor de oversampling del receptor. Debe coincidir con el SPS del Lab 2. Determina dónde caen los instantes óptimos de muestreo tras el filtro acoplado.</td>
-          <td>8 (igual que Lab 2)</td>
-          <td>Mayor SPS → mayor resolución temporal para encontrar el instante óptimo de muestreo, pero mayor costo computacional.</td>
-          <td>Menor SPS → menor resolución; si SPS es muy bajo, el filtro acoplado queda mal representado y el muestreo no coincide con el máximo del pulso.</td>
-          <td>Si SPS_rx ≠ SPS_tx, el filtro acoplado opera con diferente tasa y el muestreo será incorrecto → BER degradada. Siempre usar el mismo SPS en Lab 2 y Lab 3.</td>
-        </tr>
-        <tr>
-          <td><strong>Roll-off (α)</strong></td>
-          <td>Factor de roll-off del filtro acoplado RRC en el receptor. Debe ser idéntico al usado en el transmisor (Lab 2). La convolución de ambos filtros produce el coseno alzado completo (criterio de Nyquist).</td>
-          <td>0.25 (igual que Lab 2)</td>
-          <td>α mayor en el receptor (discordante del Tx) → la respuesta conjunta ya no es un coseno alzado → ISI residual → BER degradada incluso sin ruido.</td>
-          <td>α menor en el receptor (discordante del Tx) → mismo problema: la respuesta combinada se desvía del criterio de Nyquist → ojo más cerrado.</td>
-          <td>El par de filtros RRC (Tx: Lab 2, Rx: Lab 3) con el mismo α produce un coseno alzado completo → ISI = 0 en instantes de muestreo → BER óptima teórica.</td>
-        </tr>
-        <tr>
-          <td><strong>Bits a simular</strong></td>
-          <td>Número total de bits a generar y demodular en el modo interactivo (sin integración Lab 2). Determina la confiabilidad estadística de la estimación de BER.</td>
-          <td>5000 bits (rápido, orientativo)</td>
-          <td>Más bits → estimación de BER más precisa y confiable, especialmente en la región de bajo error. Para BER ≈ 10⁻⁵ se necesitan al menos 10⁶ bits.</td>
-          <td>Menos bits → simulación más rápida pero la BER estimada puede tener alta varianza; en la región de Eb/N0 alto, puede reportarse BER=0 por falta de eventos de error.</td>
-          <td>La regla general es: para estimar una BER de valor P con ±10% de error, se necesitan al menos 100/P bits. Para la curva BER completa usar la pestaña "Curva BER".</td>
-        </tr>
-        <tr>
-          <td><strong>Usar señal de Lab 2</strong></td>
-          <td>Modo de integración directa: carga iq.bin y params.json de la última corrida del Lab 2 (guardado en localStorage). Los parámetros de modulación, SPS y α se toman automáticamente del params.json.</td>
-          <td>Activado (recomendado para el informe)</td>
-          <td>Activo: demodula la señal real del Lab 2, incluyendo el efecto del filtro RRC del transmisor y la secuencia de bits reales del Lab 1.</td>
-          <td>Inactivo: genera bits pseudoaleatorios nuevos y modula/demodula en el Lab 3 de forma autónoma, sin depender del Lab 2.</td>
-          <td>Para el informe final, usar siempre la integración Lab2→Lab3 para demostrar la coherencia de la cadena completa de comunicación digital.</td>
-        </tr>
-      </tbody>
-    </table>
-    <div class="hint" style="margin-top: 12px;">
-      <strong>Parámetros de la pestaña "Curva BER":</strong>
-      <table style="margin-top: 8px;">
-        <thead><tr><th>Parámetro</th><th>Descripción</th><th>Valor típico</th><th>Recomendación</th></tr></thead>
-        <tbody>
-          <tr>
-            <td><strong>Bits totales</strong></td>
-            <td>Total de bits para toda la simulación Monte Carlo de la curva BER.</td>
-            <td>50000</td>
-            <td>Usar ≥ 50000 para curvas estables. Para BER &lt; 10⁻⁴, usar ≥ 10⁶ bits.</td>
-          </tr>
-          <tr>
-            <td><strong>Eb/N0 inicial / final / paso</strong></td>
-            <td>Rango y resolución del barrido de Eb/N0 para la curva BER.</td>
-            <td>0 a 10 dB, paso 1 dB</td>
-            <td>Para visualizar la caída de la curva BER de QPSK, usar 0–12 dB. Paso de 0.5 dB da curvas más suaves.</td>
-          </tr>
-          <tr>
-            <td><strong>Muestras Monte Carlo por Eb/N0</strong></td>
-            <td>Número de realizaciones independientes del canal para promediar la BER en cada punto Eb/N0.</td>
-            <td>20 (rápido) – 50 (robusto)</td>
-            <td>Más trials → curva más suave y estadísticamente confiable. Con 20 trials es suficiente para el informe; usar 50+ para resultados publicables.</td>
-          </tr>
-          <tr>
-            <td><strong>Ruta Lab 2 (opcional)</strong></td>
-            <td>Directorio de la corrida del Lab 2 a usar como transmisor en la curva BER. Si se deja vacío, usa la última corrida guardada en localStorage.</td>
-            <td>Auto (desde localStorage)</td>
-            <td>Usar "Rellenar con última corrida de Lab 2" para cargar automáticamente. Documentar la ruta en el informe para trazabilidad.</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </details>
-
-  <!-- Documentación técnica Lab 3 -->
-  <details class="doc-guide" style="margin-top: 12px;">
-    <summary>Documentación técnica (Lab 3)</summary>
-    <p class="intro">Esta sección describe el pipeline completo del receptor digital del Lab 3: canal AWGN, filtro acoplado, muestreo óptimo, estimación bayesiana (MAP/ML) y evaluación de la curva BER vs Eb/N0. Cubre todos los entregables requeridos por la guía oficial.</p>
-
-    <div class="doc-grid">
-
-      <div class="doc-card">
-        <h4>1) Objetivo y contexto del Lab 3</h4>
-        <p>El Lab 3 completa el ciclo <strong>transmisor–canal–receptor</strong> del sistema de comunicaciones digitales. La señal IQ generada en el Lab 2 se somete a un canal AWGN y se demodula con un receptor digital coherente.</p>
-        <p><strong>Cadena completa:</strong></p>
-        <ul>
-          <li>Lab 1: fuente → bits ecualizados (P≈0.5, H≈1)</li>
-          <li>Lab 2: bits → símbolos IQ → filtro RRC_tx → iq.bin</li>
-          <li>Lab 3: iq.bin → canal AWGN → filtro acoplado RRC_rx → muestreo óptimo → decisor MAP/ML → bits detectados → BER</li>
-        </ul>
-        <p>El resultado final es la <strong>curva P_b(Eb/N0)</strong> experimental comparada con la teórica, que valida el diseño completo del sistema.</p>
-      </div>
-
-      <div class="doc-card">
-        <h4>2) Canal AWGN: modelo e inyección de ruido</h4>
-        <p>El canal AWGN (Additive White Gaussian Noise) agrega ruido blanco complejo a la señal IQ:</p>
-        <p><code>r(t) = s(t) + n(t)</code></p>
-        <p>donde n(t) es ruido gaussiano complejo con densidad espectral de potencia N₀/2 por dimensión (I y Q independientes).</p>
-        <p>La <strong>potencia del ruido</strong> se calcula a partir del Eb/N0 configurado:</p>
-        <p><code>σ² = E_b / (Eb/N0 · R · sps)</code></p>
-        <p>donde E_b es la energía por bit, R es la tasa de bits por símbolo (1 para BPSK, 2 para QPSK) y sps el oversampling.</p>
-        <p>El ruido se inyecta directamente en la señal baseband compleja, tal como ocurriría en una SDR real con el receptor encendido.</p>
-      </div>
-
-      <div class="doc-card">
-        <h4>3) Filtro acoplado (Matched Filter)</h4>
-        <p>El filtro acoplado es la <strong>contraparte del pulso formador del transmisor</strong>. Para un pulso RRC en transmisión, el filtro acoplado óptimo es también un RRC con los mismos parámetros (α, sps, span):</p>
-        <p><code>h_mf(t) = h_RRC(−t)    [conjugado-reversión temporal]</code></p>
-        <p>Para el RRC (que es simétrico en el tiempo), esto equivale a usar el mismo filtro en recepción.</p>
-        <p><strong>¿Por qué el filtro acoplado es óptimo?</strong> Maximiza la SNR en el instante de muestreo óptimo, de acuerdo con el teorema de Schwarz. La salida del par de filtros (RRC_tx × RRC_rx = RC) satisface el criterio de Nyquist: ceros en t = nT → ISI = 0.</p>
-        <p><strong>Respuesta impulsiva (mf_impulse.png):</strong> pico central en t=0, lóbulos laterales simétricos decrecientes. Idéntica al pulso del transmisor.</p>
-        <p><strong>Respuesta en frecuencia (mf_freq.png):</strong> perfil del coseno alzado con roll-off α. Muestra cómo el filtro acoplado complementa al RRC del transmisor para completar la forma de Nyquist.</p>
-      </div>
-
-      <div class="doc-card">
-        <h4>4) Muestreo en instantes óptimos</h4>
-        <p>Después del filtro acoplado, la señal se muestrea <strong>una vez por símbolo</strong>, en los instantes t = nT donde la respuesta al impulso del RC completo tiene su máximo y los ISI son cero.</p>
-        <p>Con un oversampling de SPS muestras por símbolo, el instante óptimo es típicamente la muestra central del tramo de cada símbolo (índice sps//2 dentro de cada bloque de sps muestras).</p>
-        <p><strong>Efecto del timing offset:</strong> si el muestreo no coincide exactamente con t = nT (por error de sincronización), aparece ISI residual y la BER se degrada. En el Lab 3, el muestreo es síncrono (se conoce perfectamente la fase de símbolo), por lo que este efecto no está presente en la simulación ideal.</p>
-        <p><strong>rx_eye_png — Diagrama de ojo (Rx):</strong> formado con la señal filtrada antes del muestreo. Mayor apertura del ojo → mayor margen de decisión → menor BER. La posición de los cruces del ojo muestra el instante de muestreo óptimo.</p>
-      </div>
-
-      <div class="doc-card">
-        <h4>5) Decisión MAP y ML</h4>
-        <p>El <strong>estimador bayesiano MAP</strong> (Maximum A Posteriori) elige el símbolo s_k que maximiza la probabilidad posterior:</p>
-        <p><code>ŝ = argmax P(s_k | r) = argmax P(r | s_k) · P(s_k)</code></p>
-        <p>Cuando todos los símbolos son equiprobables (P(s_k) = 1/M, con M = número de puntos de la constelación), MAP se reduce al estimador <strong>ML (Maximum Likelihood)</strong>, que elige el símbolo más cercano en distancia euclídea:</p>
-        <p><code>ŝ = argmin |r − s_k|²</code></p>
-        <p>Para AWGN con símbolos equiprobables (lo que garantiza el Lab 1 con P(0)=P(1)=0.5), MAP y ML son equivalentes. La regla de decisión se reduce a encontrar el cuadrante (QPSK) o el semiplano (BPSK) donde cae la muestra recibida.</p>
-        <p><strong>rx_decision_png:</strong> muestra la salida del filtro acoplado, las muestras en los instantes óptimos y la frontera de decisión ML/MAP. Las muestras correctamente detectadas aparecen en verde; los errores en rojo.</p>
-      </div>
-
-      <div class="doc-card">
-        <h4>6) Curva BER vs Eb/N0: experimental vs teórica</h4>
-        <p>La <strong>Tasa de Error de Bit (BER)</strong> se estima experimentalmente como:</p>
-        <p><code>BER_exp = N_errores / N_bits_totales</code></p>
-        <p>La BER teórica para modulaciones en canal AWGN es:</p>
-        <ul>
-          <li><strong>BPSK:</strong> <code>P_b = Q(√(2·Eb/N0))</code></li>
-          <li><strong>QPSK:</strong> <code>P_b = Q(√(2·Eb/N0))</code> — igual que BPSK cuando se expresa en función de Eb/N0.</li>
-        </ul>
-        <p>donde Q(x) = (1/2)·erfc(x/√2) es la función Q (cola de la distribución normal).</p>
-        <p><strong>Interpretación de la curva:</strong></p>
-        <ul>
-          <li>En escala log (BER) vs lineal (Eb/N0 en dB), la curva teórica tiene una caída exponencial ("waterfall").</li>
-          <li>La curva experimental debe aproximarse a la teórica. Discrepancias se deben a: número finito de bits (varianza estadística), efectos de sincronización, truncamiento del filtro RRC (span finito).</li>
-          <li>Un desplazamiento horizontal constante de la curva experimental respecto a la teórica indica una pérdida de implementación (implementation loss).</li>
-        </ul>
-      </div>
-
-      <div class="doc-card">
-        <h4>7) Estimación del Eb/N0 y métricas del panel</h4>
-        <p>El panel de métricas muestra los resultados del análisis single-run:</p>
-        <ul>
-          <li><strong>Eb/N0 objetivo:</strong> valor configurado en la interfaz (en dB), usado para calcular la potencia de ruido a inyectar.</li>
-          <li><strong>Eb/N0 estimado:</strong> valor calculado a partir de la potencia efectiva de la señal recibida y la varianza del ruido estimada estadísticamente. Debe ser cercano al objetivo.</li>
-          <li><strong>Delta dB:</strong> diferencia entre objetivo y estimado. Un delta &gt; 0.5 dB indica posibles errores en el cálculo de la potencia de señal o en la normalización.</li>
-          <li><strong>BER:</strong> tasa de error de bit medida en esta corrida. Expresada en notación científica (ej. 3.8×10⁻⁶).</li>
-          <li><strong>Errores:</strong> número absoluto de bits erróneos detectados en esta corrida.</li>
-          <li><strong>Bits:</strong> número total de bits simulados en esta corrida.</li>
-        </ul>
-        <p>Si los errores son 0, la BER se reporta como 0 pero debe interpretarse como BER &lt; 1/N_bits (el límite de detección de la simulación).</p>
-      </div>
-
-      <div class="doc-card">
-        <h4>8) Constelaciones Tx vs Rx</h4>
-        <p>La gráfica <strong>tx_rx_constellations_png</strong> muestra en paralelo la constelación del transmisor (puntos ideales del Lab 2) y la del receptor tras el canal AWGN.</p>
-        <p><strong>Cómo interpretar:</strong></p>
-        <ul>
-          <li>Con Eb/N0 alto (ej. 15 dB): la constelación Rx tiene nubes pequeñas y compactas alrededor de los puntos ideales → pocos errores.</li>
-          <li>Con Eb/N0 bajo (ej. 2 dB): las nubes se expanden y se solapan con los cuadrantes vecinos → muchos errores.</li>
-          <li>La dispersión de los puntos Rx describe una distribución gaussiana 2D (ruido AWGN complejo) centrada en el punto Tx.</li>
-          <li>El radio de dispersión = σ = √(N₀/2), inversamente proporcional a √(Eb/N0).</li>
-        </ul>
-        <p>Esta gráfica es fundamental para el informe porque ilustra directamente el impacto del canal sobre la señal y la decisión ML/MAP.</p>
-      </div>
-
-      <div class="doc-card">
-        <h4>9) Análisis de trade-offs</h4>
-        <p><strong>Trade-off roll-off α vs BER:</strong></p>
-        <ul>
-          <li>α bajo → espectro más angosto (mayor eficiencia espectral), pero mayor sensibilidad al timing offset (el ojo se cierra más ante desincronización) → BER sube más ante errores de sincronismo.</li>
-          <li>α alto → espectro más ancho, mayor tolerancia al timing offset, BER más robusta ante errores de sincronización.</li>
-        </ul>
-        <p><strong>Trade-off span del filtro vs BER:</strong></p>
-        <ul>
-          <li>Span corto (4 símbolos) → ISI residual por truncamiento del pulso → BER ligeramente degradada incluso sin ruido (error suelo = error floor).</li>
-          <li>Span largo (8–12 símbolos) → ISI residual mínimo → BER se aproxima mejor a la curva teórica, pero mayor costo computacional y latencia.</li>
-        </ul>
-        <p><strong>Trade-off número de bits vs confiabilidad de BER:</strong></p>
-        <ul>
-          <li>Pocos bits → alta varianza en la estimación de BER → la curva experimental fluctúa alrededor de la teórica.</li>
-          <li>Muchos bits (Monte Carlo con muchos trials) → curva suave y convergente a la teórica → mayor tiempo de simulación.</li>
-        </ul>
-      </div>
-
-      <div class="doc-card">
-        <h4>10) Qué reportar en el informe final (Lab 3)</h4>
-        <p>El informe del Lab 3 es el documento integrador de los tres laboratorios. Debe cubrir:</p>
-        <ul>
-          <li><strong>Descripción teórica y diagrama de bloques</strong> del sistema completo (Lab1→Lab2→Lab3): fuente, scrambling, modulación, RRC_tx, canal AWGN, RRC_rx (filtro acoplado), muestreo, MAP/ML, BER.</li>
-          <li><strong>Implementación en Python:</strong> script completo reproducible con todos los parámetros documentados.</li>
-          <li><strong>Gráficas requeridas por la guía:</strong> señal en dominio temporal y espectral, histogramas de bits (antes/después ecualización), evolución de entropía, señal IQ en tiempo, espectro de potencia, constelación Tx, forma del pulso RRC, constelaciones antes/después del canal, respuesta impulsiva y en frecuencia del filtro acoplado, salida del filtro + decisión MAP/ML, curva P_b(Eb/N0) experimental vs teórica.</li>
-          <li><strong>Tabla de resultados:</strong> P(0), P(1), H (Lab 1); parámetros del filtro RRC (α, span, sps) (Lab 2); BER experimental y teórica para al menos 5 valores de Eb/N0 (Lab 3).</li>
-          <li><strong>Discusión crítica:</strong> diferencias entre curva experimental y teórica, fuentes de degradación (truncamiento del filtro, varianza estadística, sincronización), análisis de trade-offs.</li>
-          <li><strong>Resumen en formato de artículo científico</strong> (4–6 páginas, formato IEEE): introducción, metodología, resultados, conclusiones y referencias.</li>
-          <li><strong>Presentación PowerPoint</strong> (45 min): orden cronológico lógico, gráficos y ecuaciones que guíen la exposición.</li>
-        </ul>
-      </div>
-
-    </div>
-  </details>
-
-  <div class="actions">
-    <input type="hidden" id="i_out" value="{{ defaults.out_lab3 }}">
-    <button class="btn" style="width: 100%; font-size: 1.1em; padding: 12px;" onclick="runInteractive()">Ejecutar
-      (Single Run)</button>
-  </div>
-</div>
-
-<!-- Tab: Curva BER -->
-<div id="content-ber" class="hidden">
+<h3 style="margin-top: 10px;">Curva BER</h3>
+<div id="content-ber">
   <div class="card">
     <h3>Generador de Curvas BER</h3>
-    <p class="muted">Ejecuta una simulación barriendo Eb/N0 para obtener la curva BER, encadenada con la salida real de Lab 2.</p>
+    <p class="muted">Ejecuta una simulación barriendo Eb/N0 para obtener la curva BER, encadenada con la salida real de Modulación.</p>
+    <div class="hint" style="margin-bottom: 12px;">
+      <strong>Cómo usar este bloque:</strong> si quieres una <strong>curva BER</strong>, define un rango con <code>Eb/N0 mínimo</code>, <code>Eb/N0 máximo</code> y <code>Δ Eb/N0</code>. Si quieres un <strong>punto de operación</strong>, fija <code>Eb/N0 mínimo = Eb/N0 máximo</code>; el sistema calculará un único valor de <code>P_b = BER</code> para ese Eb/N0.
+    </div>
 
-    <form action="{{ url_for('lab3_run') }}" method="POST">
+    <form id="ber-form" action="/lab3/run" method="post">
       <div class="row">
         <div class="field">
           <label style="display:flex; align-items:center; gap:8px;">
             <input id="ber_use_l2_chain" name="use_l2_chain_ui" type="checkbox" checked disabled>
-            Usar cadena completa Lab2 → Lab3 (obligatorio)
+            Usar cadena completa Modulación → Canal y Rx (obligatorio)
           </label>
-          <small class="muted">Si está activo, la curva usa `iq.bin` + bits de una corrida real de Lab 2.</small>
+          <small class="muted">Si está activo, la curva usa `iq.bin/iq_tx.bin` + bits de una corrida real de Modulación.</small>
           <input type="hidden" name="use_l2_chain" value="on">
         </div>
         <div class="field">
-          <label>Ruta salida Lab 2 (opcional)</label>
-          <input id="ber_lab2_path" name="lab2_path" placeholder="Ej: /Users/.../outputs_ui/lab2/2026...">
+          <label>Ruta salida Modulación (opcional)</label>
+          <input id="ber_lab2_path" name="lab2_path" placeholder="Ej: outputs_ui/lab2/2026...">
+          <small class="muted">Si la ruta contiene subcarpetas (audio/texto y métodos), se procesan todas automáticamente.</small>
+          <div style="margin-top:8px; display:flex; gap:8px; flex-wrap: wrap;">
+            <button type="button" class="btn secondary" onclick="fillBerLab2Path()">Usar última corrida completa de Modulación</button>
+            <button type="button" class="btn secondary" onclick="refreshBerSubruns()">Actualizar lista</button>
+          </div>
           <div style="margin-top:8px;">
-            <button type="button" class="btn secondary" onclick="fillBerLab2Path()">Usar última corrida de Lab 2</button>
+            <label style="font-size: 0.85em; color:#475569;">Seleccionar subcarpeta (opcional)</label>
+            <select id="ber_subrun_select" name="subrun" style="margin-top:4px; width:100%;">
+              <option value="">(Sin selección: usar carpeta base)</option>
+            </select>
           </div>
         </div>
       </div>
@@ -540,15 +83,15 @@
       </div>
       <div class="row">
         <div class="field">
-          <label>Eb/N0 Inicial</label>
+          <label>Eb/N0 mínimo (inicio de barrido)</label>
           <input name="eb_start" type="number" value="0">
         </div>
         <div class="field">
-          <label>Eb/N0 Final</label>
+          <label>Eb/N0 máximo (fin de barrido)</label>
           <input name="eb_end" type="number" value="10">
         </div>
         <div class="field">
-          <label>Paso</label>
+          <label>Δ Eb/N0 entre puntos</label>
           <input name="eb_step" type="number" value="1">
         </div>
         <div class="field">
@@ -569,25 +112,18 @@
       <div style="margin-top: 16px;">
         <button type="submit" class="btn" style="background: #10b981;">Generar Curva</button>
       </div>
+          <div id="ber-progress" style="margin-top:10px; display:none;">
+        <div id="ber-progress-text" class="muted">Iniciando…</div>
+        <div style="height:6px; background:#e2e8f0; border-radius:4px; overflow:hidden; margin-top:6px;">
+          <div id="ber-progress-bar" style="height:6px; width:0%; background:#3b82f6;"></div>
+        </div>
+        <pre id="ber-log" style="margin-top:8px; background:#f8fafc; border:1px solid #e2e8f0; padding:8px; border-radius:6px; max-height:140px; overflow:auto; font-size:12px; display:none;"></pre>
+      </div>
     </form>
   </div>
 </div>
 
 <script>
-  function switchTab(tab) {
-    document.getElementById('content-interactive').classList.add('hidden');
-    document.getElementById('content-ber').classList.add('hidden');
-    document.getElementById('tab-interactive').classList.remove('active');
-    document.getElementById('tab-ber').classList.remove('active');
-    if (tab === 'interactive') {
-      document.getElementById('content-interactive').classList.remove('hidden');
-      document.getElementById('tab-interactive').classList.add('active');
-    } else {
-      document.getElementById('content-ber').classList.remove('hidden');
-      document.getElementById('tab-ber').classList.add('active');
-    }
-  }
-
   function setTrialsPreset(n) {
     const inp = document.getElementById('ber_trials');
     if (inp) inp.value = String(n);
@@ -601,96 +137,112 @@
     } catch (e) {}
   }
 
-  async function runInteractive() {
-    const btn = document.querySelector('button[onclick="runInteractive()"]');
-    const loading = document.getElementById('loading-panel');
-    const graphs = document.getElementById('graphs-panel');
-    const metrics = document.getElementById('metrics-panel');
-    const chk = document.getElementById('use_l2_results');
-
-    btn.disabled = true;
-    btn.textContent = "Procesando...";
-    loading.classList.remove('hidden');
-    graphs.classList.add('hidden');
-    metrics.classList.add('hidden');
-
-    try {
-      let payload = {};
-      if (chk && chk.checked) {
-        const l2 = JSON.parse(localStorage.getItem('lab2_params') || '{}');
-        if (!l2.out) throw new Error("No hay ruta de salida de Lab 2 guardada.");
-        payload = {
-          lab2_path: l2.out,
-          ebn0: parseFloat(document.getElementById('i_ebn0').value),
-          out: document.getElementById('i_out').value
-        };
-      } else {
-        payload = {
-          modulation: document.getElementById('i_mod').value,
-          ebn0: parseFloat(document.getElementById('i_ebn0').value),
-          sps: parseInt(document.getElementById('i_sps').value),
-          rolloff: parseFloat(document.getElementById('i_alpha').value),
-          n_bits: parseInt(document.getElementById('i_nbits').value),
-          out_dir: document.getElementById('i_out').value,
-          lab1: {
-            source: document.getElementById('l1_source').value,
-            audio: document.getElementById('l1_audio').value,
-            text: document.getElementById('l1_text').value,
-            fs: document.getElementById('l1_fs').value,
-            n_bits: document.getElementById('l1_nbits').value,
-            quantizer: document.getElementById('l1_quant').value,
-            method: document.getElementById('l1_method').value,
-            mu: document.getElementById('l1_mu').value,
-            lfsr_seed: document.getElementById('l1_lfsr_seed').value,
-            lfsr_taps: document.getElementById('l1_lfsr_taps').value,
-            lfsr_bitwidth: document.getElementById('l1_lfsr_bitwidth').value
-          }
-        };
-      }
-
-      const r = await fetch('/api/lab3/run_single', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      const data = await r.json();
-      if (!r.ok || !data.ok) throw new Error(data.error || "Error de backend");
-      drawResults(data);
-    } catch (e) {
-      alert("Error: " + e.message);
-    } finally {
-      btn.disabled = false;
-      btn.textContent = "Ejecutar (Single Run)";
-      loading.classList.add('hidden');
-    }
-  }
-
-  function drawResults(data) {
-    const graphs = document.getElementById('graphs-panel');
-    const metrics = document.getElementById('metrics-panel');
-    document.getElementById('res-ebn0-target').innerText = (data.ebn0_target_db ?? data.ebn0).toFixed(2) + ' dB';
-    document.getElementById('res-ebn0-est').innerText = (data.ebn0_est_db ?? data.ebn0).toFixed(2) + ' dB';
-    document.getElementById('res-ebn0-delta').innerText = (data.ebn0_delta_db ?? 0).toFixed(2) + ' dB';
-    document.getElementById('res-ber').innerText = data.ber.toExponential(2);
-    document.getElementById('res-errors').innerText = data.n_errors;
-    document.getElementById('res-bits').innerText = data.n_bits;
-    metrics.classList.remove('hidden');
-    if (data.paths.rx_eye_png) document.getElementById('img-eye').src = "/api/files?path=" + data.paths.rx_eye_png + "&t=" + Date.now();
-    if (data.paths.rx_constellation_png) document.getElementById('img-const').src = "/api/files?path=" + data.paths.rx_constellation_png + "&t=" + Date.now();
-    if (data.paths.ber_point_png) document.getElementById('img-ber-point').src = "/api/files?path=" + data.paths.ber_point_png + "&t=" + Date.now();
-    if (data.paths.rx_time_png) document.getElementById('img-time').src = "/api/files?path=" + data.paths.rx_time_png + "&t=" + Date.now();
-    if (data.paths.tx_rx_constellations_png) document.getElementById('img-tx-rx-const').src = "/api/files?path=" + data.paths.tx_rx_constellations_png + "&t=" + Date.now();
-    if (data.paths.mf_impulse_png) document.getElementById('img-mf-impulse').src = "/api/files?path=" + data.paths.mf_impulse_png + "&t=" + Date.now();
-    if (data.paths.mf_freq_png) document.getElementById('img-mf-freq').src = "/api/files?path=" + data.paths.mf_freq_png + "&t=" + Date.now();
-    if (data.paths.rx_decision_png) document.getElementById('img-rx-decision').src = "/api/files?path=" + data.paths.rx_decision_png + "&t=" + Date.now();
-    graphs.classList.remove('hidden');
-  }
-
   window.addEventListener('DOMContentLoaded', () => {
     fillBerLab2Path();
     document.querySelectorAll('select[name="modulation"], input[name="n_bits"]').forEach(el => {
       el.disabled = true;
     });
+    refreshBerSubruns();
+
+    const form = document.getElementById('ber-form');
+    if (form) {
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (typeof hideOverlay === 'function') { hideOverlay(); }
+        try {
+          await startBerAsync();
+        } catch (err) {
+          // fallback to sync submit if async fails
+          form.submit();
+        }
+      });
+    }
   });
+
+  async function refreshBerSubruns(){
+    try {
+      const l2 = JSON.parse(localStorage.getItem('lab2_params') || '{}');
+      const base = document.getElementById('ber_lab2_path').value || l2.out || '';
+      if (!base) return;
+      const r = await fetch(`/api/lab2/subruns?path=${encodeURIComponent(base)}`);
+      const j = await r.json();
+      const sel = document.getElementById('ber_subrun_select');
+      if (!sel) return;
+      sel.innerHTML = '<option value="">(Sin selección: usar carpeta base)</option>';
+      if (j.ok && j.runs && j.runs.length) {
+        for (const rname of j.runs) {
+          const opt = document.createElement('option');
+          opt.value = rname;
+          opt.textContent = rname;
+          sel.appendChild(opt);
+        }
+      }
+    } catch (e) {}
+  }
+
+  async function startBerAsync(){
+    const form = document.getElementById('ber-form');
+    if (!form) return;
+    const btn = form.querySelector('button[type="submit"]');
+    if (btn) { btn.disabled = true; btn.textContent = 'Procesando…'; }
+
+    const progress = document.getElementById('ber-progress');
+    const progressText = document.getElementById('ber-progress-text');
+    const progressBar = document.getElementById('ber-progress-bar');
+    const logEl = document.getElementById('ber-log');
+    if (progress) progress.style.display = 'block';
+    if (progressText) progressText.textContent = 'Enviando simulación…';
+    if (progressBar) progressBar.style.width = '0%';
+    if (logEl) logEl.style.display = 'none';
+
+    const fd = new FormData(form);
+    const data = {};
+    fd.forEach((v, k) => { data[k] = v; });
+
+    const r = await fetch('/api/lab3/run_async', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'No se pudo iniciar la simulación');
+
+    const outDir = j.out_dir;
+    await pollBerStatus(outDir);
+    const timer = setInterval(async () => {
+      const done = await pollBerStatus(outDir);
+      if (done) clearInterval(timer);
+    }, 1500);
+  }
+
+  async function pollBerStatus(outDir){
+    const r = await fetch(`/api/lab3/status?out=${encodeURIComponent(outDir)}`);
+    const j = await r.json();
+    if (!j.ok) return false;
+    const st = j.status;
+    const progressText = document.getElementById('ber-progress-text');
+    const progressBar = document.getElementById('ber-progress-bar');
+    const logEl = document.getElementById('ber-log');
+
+    if (progressText) progressText.textContent = st.message || 'Procesando…';
+    if (progressBar) progressBar.style.width = Math.round((st.progress || 0) * 100) + '%';
+    if (logEl && st.log_tail) {
+      logEl.style.display = 'block';
+      logEl.textContent = st.log_tail;
+    }
+
+    if (st.state === 'done') {
+      window.location.href = `/lab3/results?out=${encodeURIComponent(outDir)}`;
+      return true;
+    }
+    if (st.state === 'error') {
+      alert('Error: ' + (st.message || 'fallo en simulación'));
+      const btn = document.querySelector('#ber-form button[type="submit"]');
+      if (btn) { btn.disabled = false; btn.textContent = 'Generar Curva'; }
+      return true;
+    }
+    return false;
+  }
 </script>
 {% endblock %}

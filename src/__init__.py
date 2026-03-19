@@ -1,7 +1,8 @@
 """CDA pipelines package.
 
 Incluye:
-- Lab 1: formateo y ecualización del histograma
-- Lab 2: modulación y pulso RRC
+- Formateo: formateo y ecualización del histograma
+- Modulación: modulación y pulso RRC
+- Canal y Rx: canal AWGN, filtro acoplado y detección
 """
 

@@ -1,16 +1,131 @@
 {% extends 'base.html' %}
 {% block content %}
-<div class="grid">
-  {% for st in stages %}
-  <div class="card">
-    <h3>{{ st.title }}</h3>
-    <p class="muted">{{ st.desc }}</p>
-    {% if st.link %}
-    <a class="btn" href="{{ st.link }}">Entrar</a>
-    {% else %}
-    <a class="btn secondary" href="#" title="Próximamente" onclick="return false;">Próximamente</a>
-    {% endif %}
+<style>
+  .diagram-wrap {
+    margin: 10px auto 40px;
+    padding: 32px 20px;
+    border-radius: 16px;
+    background:
+      radial-gradient(900px 240px at 15% 0%, rgba(59,130,246,0.10), transparent 60%),
+      radial-gradient(900px 240px at 85% 100%, rgba(34,197,94,0.10), transparent 60%),
+      linear-gradient(180deg, #f8fafc, #f2f5f9);
+    border: 1px solid #e6eaf0;
+  }
+  .diagram-title {
+    font-family: "Space Grotesk", "IBM Plex Sans", "Segoe UI", sans-serif;
+    font-size: 22px;
+    margin: 0 0 6px;
+    color: #0f172a;
+  }
+  .diagram-sub {
+    font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+    font-size: 13px;
+    color: #475569;
+    margin-bottom: 18px;
+  }
+  .diagram-container {
+    display: grid;
+    grid-template-columns: minmax(220px, 1fr) auto minmax(220px, 1fr) auto minmax(220px, 1fr);
+    gap: 14px;
+    align-items: center;
+  }
+  .system-block {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 18px 18px 14px;
+    min-height: 170px;
+    text-align: left;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    box-shadow: 0 6px 14px rgba(15, 23, 42, 0.05);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  .system-block:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 16px 26px rgba(15, 23, 42, 0.12);
+    border-color: #3b82f6;
+  }
+  .block-fuente { border-left: 6px solid #ef4444; }
+  .block-modulador { border-left: 6px solid #22c55e; }
+  .block-canalrx { border-left: 6px solid #f97316; }
+  .system-block h3 {
+    margin: 0 0 6px 0;
+    font-family: "Space Grotesk", "IBM Plex Sans", "Segoe UI", sans-serif;
+    font-size: 16px;
+    color: #0f172a;
+  }
+  .system-block p {
+    font-size: 12.5px;
+    color: #64748b;
+    line-height: 1.5;
+    margin: 0 0 12px 0;
+  }
+  .btn-entrar {
+    background-color: #0f172a;
+    color: white;
+    border: none;
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    width: 100%;
+    transition: background-color 0.2s;
+  }
+  .btn-entrar:hover { background-color: #1e293b; }
+  .arrow {
+    font-size: 26px;
+    color: #94a3b8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 4px;
+  }
+  @media (max-width: 900px) {
+    .diagram-container {
+      grid-template-columns: 1fr;
+    }
+    .arrow {
+      transform: rotate(90deg);
+      padding: 6px 0;
+    }
+  }
+</style>
+
+<div class="diagram-wrap">
+  <h2 class="diagram-title">Etapas del Sistema de Transmisión</h2>
+  <div class="diagram-sub">Accedé a cada etapa como en un diagrama de bloques: Formateo → Modulación → Canal y Rx.</div>
+
+  <div class="diagram-container">
+    <div class="system-block block-fuente" onclick="window.location.href='{{ url_for('lab1_page') }}'">
+      <div>
+        <h3>1. Etapa de Formateo</h3>
+        <p>Conversión A/D, re-muestreo, cuantización (uniforme/µ-law), ecualización (Scrambling) y codificación Huffman.</p>
+      </div>
+      <button class="btn-entrar">Configurar Formateo</button>
+    </div>
+
+    <div class="arrow">&#8594;</div>
+
+    <div class="system-block block-modulador" onclick="window.location.href='{{ url_for('lab2_page') }}'">
+      <div>
+        <h3>2. Etapa de Modulación</h3>
+        <p>Mapeo de símbolos (BPSK/QPSK), sobremuestreo (SPS) y conformación con pulso RRC.</p>
+      </div>
+      <button class="btn-entrar">Modular Señal</button>
+    </div>
+
+    <div class="arrow">&#8594;</div>
+
+    <div class="system-block block-canalrx" onclick="window.location.href='{{ url_for('lab3_page') }}'">
+      <div>
+        <h3>3. Canal y Rx</h3>
+        <p>Canal AWGN, filtro acoplado, muestreo óptimo, decisión ML/MAP y BER.</p>
+      </div>
+      <button class="btn-entrar">Canal y Rx</button>
+    </div>
   </div>
-  {% endfor %}
 </div>
 {% endblock %}

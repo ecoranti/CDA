@@ -1,9 +1,10 @@
 {% extends 'base.html' %}
 {% block content %}
-  <h2>Resultados Lab 1</h2>
+  <h2>Resultados Formateo</h2>
   <p class="muted">Directorio de salida: <code>{{ out }}</code></p>
   <p>
-    <a class="btn" href="{{ url_for('lab1_results', out=out) }}">Abrir carpeta de resultados</a>
+    <button class="btn" type="button" onclick="openResultsFolder('{{ out }}')">Abrir carpeta de resultados</button>
+    <button class="btn secondary" type="button" onclick="downloadZip('{{ out }}')">Descargar ZIP completo</button>
     <a class="btn" href="{{ url_for('download', out=out, file='informe_lab1.pdf') }}">Descargar informe (PDF)</a>
     <a class="btn secondary" href="{{ url_for('download', out=out, file='informe_lab1.md') }}">Descargar informe (MD)</a>
     <a class="btn secondary" href="{{ url_for('index') }}">Menú principal</a>
@@ -32,4 +33,23 @@
     <pre style="white-space: pre-wrap; background:#f8fafc; padding:10px; border:1px solid #e2e8f0; border-radius:8px;">{{ log_text }}</pre>
   {% endif %}
   <p><a class="btn secondary" href="{{ url_for('lab1_page') }}">Nueva corrida</a></p>
+
+  <script>
+    async function openResultsFolder(path){
+      try {
+        const res = await fetch('/api/open_folder', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path })
+        });
+        const j = await res.json();
+        if (!j.ok) {
+          alert(j.error || 'No se pudo abrir la carpeta.');
+        }
+      } catch (e) {
+        alert('No se pudo abrir la carpeta.');
+      }
+    }
+  </script>
+
 {% endblock %}

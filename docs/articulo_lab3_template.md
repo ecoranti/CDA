@@ -1,4 +1,4 @@
-# Plantilla de Artículo Técnico (Lab 3)
+# Plantilla de Artículo Técnico (Canal y Rx)
 
 Formato sugerido: IEEE o APA, 4 a 6 páginas.
 
@@ -9,7 +9,7 @@ Demodulación Digital en Canal AWGN con Filtro Acoplado y Detección Bayesiana: 
 [Nombre 1], [Nombre 2], [Nombre 3]
 
 ## Resumen
-Este artículo presenta la implementación y evaluación de una cadena de comunicación digital completa, encadenando la salida del transmisor baseband (Lab 2) con el receptor digital (Lab 3). Se modela un canal AWGN sobre señales IQ reales de transmisión, se aplica filtro acoplado RRC, muestreo óptimo y detección ML/MAP para reconstrucción de bits. Se estima la BER experimental en función de Eb/N0 y se compara con la referencia teórica de BPSK/QPSK coherente. Se incluyen estimaciones de Eb/N0 efectivo y bandas de confianza por Monte Carlo para validar la consistencia estadística de los resultados.
+Este artículo presenta la implementación y evaluación de una cadena de comunicación digital completa, encadenando la salida del transmisor baseband (Modulación) con el receptor digital (Canal y Rx). Se modela un canal AWGN sobre señales IQ reales de transmisión, se aplica filtro acoplado RRC, muestreo óptimo y detección ML/MAP para reconstrucción de bits. Se estima la BER experimental en función de Eb/N0 y se compara con la referencia teórica de BPSK/QPSK coherente. Se incluyen estimaciones de Eb/N0 efectivo y bandas de confianza por Monte Carlo para validar la consistencia estadística de los resultados.
 
 **Palabras clave:** comunicación digital, AWGN, filtro acoplado, BER, Eb/N0, ML/MAP.
 
@@ -34,9 +34,9 @@ Este artículo presenta la implementación y evaluación de una cadena de comuni
 
 ## 3. Metodología
 ### 3.1 Flujo experimental encadenado
-1. Generación de bits y señal IQ en Lab 2.
+1. Generación de bits y señal IQ en Modulación.
 2. Exportación (`iq.bin`, bits de referencia, `params.json`).
-3. Ingreso de esos archivos al Lab 3.
+3. Ingreso de esos archivos al Canal y Rx.
 4. Barrido de Eb/N0 con Monte Carlo por punto.
 
 ### 3.2 Parámetros

@@ -85,13 +85,20 @@ def process_audio(
             os.path.join(figdir, f"A_bits_hist_compare_{prefix}.png"),
             as_probability=True,
         )
+        # Entropía binaria para original y scrambler
         plot_entropy_evolution(
             [bitsA, bitsA_scr],
             [f"{q_name} original", f"{q_name} + scrambler"],
             os.path.join(figdir, f"A_entropy_evolution_{prefix}.png"),
             step=entropy_step
         )
-
+        # Huffman en gráfico separado (bits no equiprobables)
+        plot_entropy_evolution(
+            [bitsA_huff],
+            [f"{q_name} + huffman (bits no equiprobables)"],
+            os.path.join(figdir, f"A_entropy_evolution_huffman_{prefix}.png"),
+            step=entropy_step
+        )
         # 7) Métricas
         p0A, p1A, HA, varA = bits_entropy_stats(bitsA)
         p0A_s, p1A_s, HA_s, varA_s = bits_entropy_stats(bitsA_scr)
@@ -154,10 +161,18 @@ def process_text(
         os.path.join(figdir, "B_bits_hist_compare.png"),
         as_probability=True
     )
+    # Entropía binaria para original y scrambler
     plot_entropy_evolution(
         [bitsB, bitsB_scr],
         ["Texto original", "Texto + scrambler"],
         os.path.join(figdir, "B_entropy_evolution.png"),
+        step=entropy_step
+    )
+    # Huffman en gráfico separado (bits no equiprobables)
+    plot_entropy_evolution(
+        [bitsB_huff],
+        ["Texto + huffman (bits no equiprobables)"],
+        os.path.join(figdir, "B_entropy_evolution_huffman.png"),
         step=entropy_step
     )
 
@@ -174,7 +189,7 @@ def process_text(
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Lab 1 – Formateo y Ecualización del Histograma")
+    ap = argparse.ArgumentParser(description="Formateo – Ecualización del Histograma")
     ap.add_argument("--audio", required=True, help="Ruta a WAV PCM (voz)")
     ap.add_argument("--text", required=True, help="Ruta a archivo de texto (UTF-8)")
     ap.add_argument("--out", default="outputs", help="Directorio de salida")
