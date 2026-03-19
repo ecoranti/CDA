@@ -42,7 +42,7 @@
   <button class="btn secondary" type="button" onclick="quickAlpha(0.5)">α=0.5</button>
   <button class="btn secondary" type="button" onclick="runApiLab2()">Ejecutar (API, sin recargar)</button>
   <button class="btn secondary" type="button" onclick="quickExampleLab2()">Ejemplo rápido</button>
-  <a class="btn secondary" href="{{ url_for('index') }}">Menú principal</a>
+  <a class="btn secondary" href="{{ url_for('index') }}">Ir al Inicio</a>
 </form>
 <h3>Usar bits generados en Formateo</h3>
 <div class="row">
@@ -120,7 +120,7 @@
     style="width: 100%; font-size: 1.1em; padding: 12px; background-color: #2563eb;">
     EJECUTAR SIMULACIÓN COMPLETA (Formateo &rarr; Modulación)
   </button>
-  <p class="muted" style="margin-bottom: 0; margin-top: 8px; font-size: 0.9em; text-align: center;">Usa TODOS los
+  <p class="muted" style="margin-bottom: 0; margin-top: 8px; font-size: 0.9em; text-align: center;">Usá TODOS los
     parámetros configurados arriba (Audio/Texto/LFSR) + Modulación.</p>
   <p class="muted" style="margin-top: 6px; font-size: 0.85em; text-align: center;">Nota: en este modo se <strong>ignoran</strong> <code>Cantidad de bits</code> y <code>Seed</code>, porque los bits ya vienen del Formateo.</p>
 </div>
@@ -141,13 +141,13 @@
 
 <details class="param-guide" style="margin-top: 20px;">
   <summary>Guía de parámetros (Modulación)</summary>
-  <div class="hint">Referencia rápida de qué controla cada campo del modulador, su valor típico y el efecto esperado al modificarlo. Para los parámetros heredados del Formateo, ver la guía de parámetros del Formateo.</div>
+  <div class="hint">Referencia rápida de qué controla cada parámetro del modulador, su fundamento teórico y el efecto esperado al modificarlo. Para los parámetros heredados del Formateo, ver la guía de parámetros del Formateo.</div>
   <table>
     <thead>
       <tr>
         <th>Parámetro</th>
         <th>Qué controla</th>
-        <th>Valor típico</th>
+        <th>Fundamento teórico</th>
         <th>Si aumenta</th>
         <th>Si disminuye</th>
         <th>Impacto en etapas siguientes</th>
@@ -157,15 +157,15 @@
       <tr>
         <td><strong>Modulación</strong></td>
         <td>Esquema de mapeo bits→símbolos complejos IQ. BPSK: 1 bit/símbolo, 2 puntos en constelación. QPSK: 2 bits/símbolo, 4 puntos.</td>
-        <td>QPSK (balance eficiencia/robustez)</td>
+        <td>BPSK: M=2, k=1 bit/símbolo, 1 dimensión (solo eje I). QPSK: M=4, k=2 bits/símbolo, 2 dimensiones (I y Q). Ambas tienen la misma BER para igual Eb/N₀: P_b = Q(√(2Eb/N₀)) (Sklar, s4.4.1).</td>
         <td>QPSK duplica la eficiencia espectral de BPSK: el mismo ancho de banda transporta el doble de información por símbolo.</td>
         <td>BPSK es más robusto al ruido (mayor distancia entre puntos de constelación para la misma potencia), pero requiere el doble de ancho de banda para la misma tasa de bits.</td>
-        <td>La modulación define la sensibilidad al ruido en el Canal y Rx: BPSK tolera mayor Eb/N0 antes de errar, QPSK es más eficiente espectralmente.</td>
+        <td>La modulación define la eficiencia espectral y la complejidad del detector en Canal y Rx. Para igual Eb/N₀, BER_BPSK = BER_QPSK (misma curva teórica). La ventaja de QPSK es espectral: igual BER con el doble de bits por símbolo.</td>
       </tr>
       <tr>
         <td><strong>Cantidad de bits</strong></td>
         <td>Número total de bits a modular cuando no se usan bits del Formateo. Se generan pseudoaleatoriamente con la semilla configurada.</td>
-        <td>2000 bits</td>
+        <td>La longitud de la secuencia determina la densidad estadística de la constelación y la suavidad del espectro de potencia estimado (Welch). Con QPSK se generan la mitad de símbolos que bits (k=2).</td>
         <td>Más bits → constelación más densa y representativa, espectro más suave, diagrama de ojo con más transiciones visibles.</td>
         <td>Menos bits → procesamiento más rápido, pero la constelación puede verse dispersa y las estadísticas del espectro menos confiables.</td>
         <td>Con QPSK, 2000 bits generan 1000 símbolos → 8000 muestras IQ con sps=8. Para curvas BER confiables en Canal y Rx se necesitan al menos 50000 bits.</td>
@@ -173,7 +173,7 @@
       <tr>
         <td><strong>Samples por símbolo (sps)</strong></td>
         <td>Factor de oversampling: cuántas muestras IQ representa cada símbolo después del filtro RRC. Determina la resolución temporal de la señal.</td>
-        <td>8 muestras/símbolo</td>
+        <td>El sobremuestreo (sps > 1) es necesario para implementar el filtro RRC en tiempo discreto. El mínimo teórico es sps=2 (Nyquist); valores típicos en sistemas reales son sps=4–8. sps alto mejora visualización a costa de cómputo.</td>
         <td>Mayor sps → mejor resolución temporal del pulso RRC, diagrama de ojo más nítido, mayor costo computacional y más muestras a procesar en Canal y Rx.</td>
         <td>Menor sps → procesamiento más rápido, pero la forma del pulso RRC queda mal representada y el diagrama de ojo pierde definición. Mínimo recomendado: sps=4.</td>
         <td>El receptor del Canal y Rx debe conocer el sps para el muestreo en instantes óptimos. Mayor sps facilita la sincronización de símbolo.</td>
@@ -181,7 +181,7 @@
       <tr>
         <td><strong>Roll-off α</strong></td>
         <td>Factor de exceso de ancho de banda del filtro RRC (Root Raised Cosine). Define el compromiso entre eficiencia espectral e ISI (Interferencia InterSímbolo).</td>
-        <td>0.25 (balance estándar, usado en LTE, DVB-S, QPSK satelital)</td>
+        <td>El ancho de banda del sistema es W = (1+α)/2·Rs (Sklar, Ec. 3.81). Con α=0 se alcanza el mínimo teórico de Nyquist (W=Rs/2) pero el filtro es irrealizable (sinc infinito). α > 0 hace el filtro físicamente realizable a costa de mayor ancho de banda.</td>
         <td>α mayor → espectro más ancho (menor eficiencia espectral), pero pulso más corto en el tiempo (menor ISI, mayor apertura del ojo, más tolerancia al jitter).</td>
         <td>α menor → espectro más angosto (mayor eficiencia espectral), pero pulso con colas más largas en el tiempo (mayor ISI si hay desincronización, ojo más cerrado).</td>
         <td>El receptor del Canal y Rx usa el mismo α para construir el filtro acoplado. α=0 → filtro de Nyquist ideal (pulso sinc, banda mínima pero infinito en tiempo). α=1 → banda doble, pulso muy compacto.</td>
@@ -189,7 +189,7 @@
       <tr>
         <td><strong>Span del filtro (símbolos)</strong></td>
         <td>Longitud truncada del pulso RRC, expresada en número de símbolos. El filtro se implementa con span·sps + 1 coeficientes.</td>
-        <td>8 símbolos (64 coeficientes con sps=8)</td>
+        <td>El filtro RRC ideal tiene soporte infinito. El truncamiento a span símbolos introduce ISI residual proporcional a la energía descartada de las colas. El número de coeficientes es N = 2·span·sps + 1.</td>
         <td>Span mayor → el pulso captura más energía de las colas → respuesta más cercana al RRC ideal → menor ISI residual, pero mayor latencia y costo computacional.</td>
         <td>Span menor → el pulso está más truncado → mayor ISI residual y distorsión en el diagrama de ojo, pero menor latencia. Mínimo recomendado: span=4.</td>
         <td>El receiver del Canal y Rx debe usar el mismo span para construir el filtro acoplado. Span mayor mejora marginalmente el BER pero aumenta la complejidad del receptor.</td>
@@ -197,7 +197,7 @@
       <tr>
         <td><strong>Seed (aleatoriedad)</strong></td>
         <td>Semilla del generador de números pseudoaleatorios de NumPy. Controla la secuencia de bits generados cuando no se usan bits del Formateo.</td>
-        <td>0 (reproducible)</td>
+        <td>La semilla del generador pseudoaleatorio (NumPy RNG) garantiza reproducibilidad exacta entre ejecuciones. Solo es relevante cuando no se usan bits del Formateo. Documentar la semilla usada para reproducibilidad del informe.</td>
         <td>Diferente semilla → secuencia de bits diferente → constelación y trayectorias IQ distintas, pero mismas propiedades estadísticas promedio.</td>
         <td>Seed=0 garantiza reproducibilidad exacta de los resultados entre ejecuciones.</td>
         <td>Irrelevante cuando se usan bits del Formateo. Para comparar configuraciones del filtro, usar siempre la misma seed para que las diferencias sean atribuibles solo a los parámetros del filtro.</td>
@@ -205,7 +205,7 @@
       <tr>
         <td><strong>Fuente para bits</strong></td>
         <td>Selecciona de dónde provienen los bits: solo audio (Fuente A), solo texto (Fuente B), concatenación o ejecución separada de ambas fuentes.</td>
-        <td>Audio (fuente A, señal de voz µ-law)</td>
+        <td>La fuente de bits determina las propiedades estadísticas de la secuencia modulada. Bits equiprobables (P(0)≈P(1)≈0.5) son necesarios para que la constelación tenga densidad uniforme y el espectro sea plano dentro de la banda RRC.</td>
         <td>"Concat" maximiza la cantidad de bits disponibles y combina las características estadísticas de ambas fuentes. "Separados" genera dos corridas independientes (audio y texto) con resultados y archivos por separado.</td>
         <td>"Texto" genera menos bits pero es más rápido; útil para pruebas rápidas de la cadena Formateo→Modulación.</td>
         <td>Independientemente de la fuente, la ecualización (scrambling) debe garantizar P(0)≈P(1)≈0.5. El histograma de bits l1_bits_hist.png lo confirma.</td>
@@ -213,7 +213,7 @@
       <tr>
         <td><strong>Método de ecualización</strong></td>
         <td>Técnica de ecualización del histograma de bits proveniente del Formateo: scrambling LFSR (aleatorización XOR) o codificación Huffman (compresión variable).</td>
-        <td>Scrambling (simple, sin latencia)</td>
+        <td>El scrambling LFSR aplica XOR bit a bit con una PRBS, garantizando P(0)≈P(1)≈0.5 sin comprimir. Huffman comprime la fuente (reduce tasa binaria) pero genera bits no equiprobables y requiere transmitir la tabla de códigos al receptor.</td>
         <td>Huffman comprime la fuente → menos bits de entrada al modulador, pero requiere transmitir la tabla de códigos al receptor.</td>
         <td>Scrambling no comprime pero es más robusto y compatible con sistemas en tiempo real. Preferido para transmisión de voz.</td>
         <td>Con cualquier método, la auditoría de coherencia (p0=p1=0.5, H=1.0) verifica que la entrada al modulador es estadísticamente óptima.</td>
@@ -230,7 +230,7 @@
         <tr><td>Eficiencia espectral</td><td>1 bit/s/Hz</td><td>2 bit/s/Hz</td></tr>
         <tr><td>Componente Q</td><td>≈ 0 (solo eje I)</td><td>Activa (datos en I y Q)</td></tr>
         <tr><td>Diagrama de ojo (Q)</td><td>Plano en 0 ("ojo vacío")</td><td>Abierto igual que I</td></tr>
-        <tr><td>Robustez al ruido</td><td>Mayor (más distancia entre puntos)</td><td>Menor (misma potencia, 4 puntos)</td></tr>
+        <tr><td>BER para igual Eb/N₀</td><td colspan="2" style="text-align:center">Idéntica: P_b = Q(√(2Eb/N₀)) — Sklar, Ec. 4.44. La ventaja de BPSK en distancia entre puntos se compensa porque QPSK distribuye la misma energía por bit en 2 dimensiones.</td></tr>
         <tr><td>Aplicaciones típicas</td><td>Satélite bajo SNR, deep-space</td><td>DVB-S2, LTE, WiFi, cable</td></tr>
       </tbody>
     </table>
@@ -282,10 +282,10 @@
       <h4>3) Filtro RRC: el pulso formador de onda</h4>
       <p>El <strong>filtro Raíz de Coseno Alzado (Root Raised Cosine, RRC)</strong> es el pulso conformador estándar para comunicaciones digitales. Su función de transferencia en frecuencia es la raíz cuadrada del coseno alzado (RC):</p>
       <p><code>H_RRC(f) = √H_RC(f)</code></p>
-      <p>La respuesta del RC en el dominio del tiempo es: <code>h_RC(t) = sinc(t/T)·cos(παt/T) / [1−(2αt/T)²]</code></p>
+      <p>La respuesta del coseno elevado (RC) en el tiempo es: <code>h_RC(t) = sinc(t/T)·cos(παt/T) / [1−(2αt/T)²]</code>. Esta es la respuesta del RC completo, no del RRC. El RRC no tiene forma cerrada analítica simple en el tiempo y se implementa numéricamente a partir de su respuesta en frecuencia.</p>
       <p>donde T es el período de símbolo y α el factor de roll-off.</p>
       <p><strong>¿Por qué usar RRC y no RC directamente?</strong> El filtro RRC se aplica tanto en el transmisor (Modulación) como en el receptor (Canal y Rx, filtro acoplado). La convolución de dos RRC iguales produce el RC completo, que satisface el criterio de Nyquist (ceros en t = nT para n≠0) → <strong>ISI = 0</strong> en los instantes de muestreo.</p>
-      <p>El ancho de banda total del sistema es: <code>B_T = (1+α) / (2T)</code></p>
+      <p>El ancho de banda unilateral en banda base es: <code>W = (1+α)·Rs/2 = (1+α)/(2T)</code> (Sklar, Ec. 3.81). En banda pasante DSB: <code>W_DSB = (1+α)·Rs</code>. El filtro RRC no tiene expresión cerrada simple en el tiempo; se obtiene como la raíz cuadrada en frecuencia del coseno elevado.</p>
     </div>
 
     <div class="doc-card">

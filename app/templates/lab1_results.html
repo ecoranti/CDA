@@ -7,7 +7,7 @@
     <button class="btn secondary" type="button" onclick="downloadZip('{{ out }}')">Descargar ZIP completo</button>
     <a class="btn" href="{{ url_for('download', out=out, file='informe_lab1.pdf') }}">Descargar informe (PDF)</a>
     <a class="btn secondary" href="{{ url_for('download', out=out, file='informe_lab1.md') }}">Descargar informe (MD)</a>
-    <a class="btn secondary" href="{{ url_for('index') }}">Menú principal</a>
+    <a class="btn secondary" href="{{ url_for('index') }}">Ir al Inicio</a>
   </p>
   {% if figs %}
     <h3>Figuras</h3>

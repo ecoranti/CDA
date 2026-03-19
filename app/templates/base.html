@@ -6,14 +6,20 @@
   <title>CDA – Sistema Digital</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif; margin: 0; background: #f7f7fb; color: #111; }
-    header { padding: 14px 20px; background: #232a3b; color: #fff; }
-    header h1 { margin: 0; font-size: 18px; }
+    header { padding: 12px 20px; background: #232a3b; color: #fff; }
+    .site-head { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+    .site-brand { display:flex; align-items:center; gap:14px; min-width:0; }
+    .site-brand h1 { margin: 0; font-size: 18px; }
+    .site-author { margin-top:4px; color:#cbd5e1; font-size:12px; }
+    .site-logos { display:flex; align-items:center; gap:10px; flex-shrink:0; }
+    .site-logos img { width:40px; height:40px; object-fit:contain; background:#fff; border-radius:8px; padding:2px; border:1px solid rgba(255,255,255,0.18); }
     main { padding: 20px; max-width: 1100px; margin: 0 auto; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
     .card { background: #fff; border-radius: 10px; border: 1px solid #e7e7ef; padding: 16px; box-shadow: 0 1px 2px rgb(0 0 0 / 4%); }
     .card h3 { margin: 0 0 8px; font-size: 18px; }
-    .btn { display: inline-block; padding: 8px 12px; border-radius: 8px; background: #3b82f6; color: #fff; text-decoration: none; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 42px; padding: 0 16px; border-radius: 10px; background: #3b82f6; color: #fff; text-decoration: none; font-size: 15px; font-weight: 600; line-height: 1.2; border: 0; box-sizing: border-box; vertical-align: middle; cursor: pointer; white-space: nowrap; }
     .btn.secondary { background: #64748b; }
+    button.btn, input.btn { font-family: inherit; -webkit-appearance: none; appearance: none; }
     form .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     form .field { display: flex; flex-direction: column; margin-bottom: 10px; }
     label { font-size: 12px; color: #334155; margin-bottom: 4px; }
@@ -56,6 +62,10 @@
     .overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.7); display: none; align-items: center; justify-content: center; z-index: 1000; }
     .spinner { width: 42px; height: 42px; border: 4px solid #cbd5e1; border-top-color: #3b82f6; border-radius: 50%; animation: spin 0.8s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
+    @media (max-width: 720px) {
+      .site-head { flex-direction:column; align-items:flex-start; }
+      .site-logos img { width:34px; height:34px; }
+    }
   </style>
   {% block head %}{% endblock %}
   {% if config.DEBUG %}
@@ -65,7 +75,18 @@
 </head>
 <body>
   <header>
-    <h1>CDA – Sistema Digital (Etapas)</h1>
+    <div class="site-head">
+      <div class="site-brand">
+        <div>
+          <h1>CDA – Sistema Digital (Etapas)</h1>
+          <div class="site-author">Autor del programa: Elias Ariel Coranti, estudiante de CDA 2025</div>
+        </div>
+      </div>
+      <div class="site-logos">
+        <img src="{{ url_for('static', filename='ingenieria.png') }}" alt="Ingeniería">
+        <img src="{{ url_for('static', filename='unrc.png') }}" alt="UNRC">
+      </div>
+    </div>
   </header>
   <main>
     <div id="overlay" class="overlay"><div class="spinner"></div></div>

@@ -73,13 +73,13 @@
 
     <details class="param-guide">
       <summary>Guía de parámetros (Formateo)</summary>
-      <div class="hint">Referencia rápida de qué controla cada campo, su valor típico y el efecto esperado al aumentarlo o reducirlo.</div>
+      <div class="hint">Referencia rápida de qué controla cada parámetro, su fundamento teórico y el efecto esperado al modificarlo.</div>
       <table>
         <thead>
           <tr>
             <th>Parámetro</th>
             <th>Qué controla</th>
-            <th>Valor típico</th>
+            <th>Fundamento teórico</th>
             <th>Si aumenta</th>
             <th>Si disminuye</th>
             <th>Impacto en etapas siguientes</th>
@@ -89,7 +89,7 @@
           <tr>
             <td><strong>Audio WAV</strong></td>
             <td>Archivo fuente de la rama de audio (Fuente A). Señal analógica ya digitalizada que el pipeline re-muestrea, convierte a mono y normaliza.</td>
-            <td>voice.wav, mono, PCM</td>
+            <td>La señal de audio ya digitalizada (formato WAV/PCM) se re-muestrea al fs objetivo usando re-muestreo polifásico (Oppenheim, s4.8). La longitud determina la robustez estadística de las métricas de entropía.</td>
             <td>Audio más largo → más muestras → más bits → estadística más robusta y curvas de entropía más estables.</td>
             <td>Audio más corto → ejecución más rápida, pero con menor evidencia estadística para validar la ecualización.</td>
             <td>Más bits → mayor carga en el modulador del Modulación. La distribución de amplitudes del audio determina cuánto trabajo debe hacer el cuantizador.</td>
@@ -97,15 +97,15 @@
           <tr>
             <td><strong>Texto</strong></td>
             <td>Archivo de caracteres ASCII/UTF-8 (Fuente B). Se convierte directamente a bytes y luego a bits 0/1, sin etapa de cuantización.</td>
-            <td>sample_text.txt, UTF-8, ~40 palabras</td>
+            <td>El texto ASCII/UTF-8 es ya digital: cada byte se convierte a 8 bits MSB→LSB sin cuantización. El bit 7 es siempre 0 en ASCII imprimible, causando P(0) > P(1) estructuralmente (Sklar, s2.7).</td>
             <td>Texto más largo → más bytes → más bits → mejor base estadística para medir entropía y evaluar la ecualización.</td>
             <td>Texto más corto → menos bits → menor información para comparar técnicas; la curva de entropía puede ser inestable.</td>
-            <td>El ASCII tiene muchos ceros en bits de mayor peso (P(0) ≈ 0.7 antes de ecualizar), lo que hace necesaria la etapa de scrambling antes del Modulación.</td>
+            <td>El texto ASCII tiene el bit 7 (MSB) siempre en cero en caracteres imprimibles, sesgando sistemáticamente P(0) > P(1). Esto hace indispensable la etapa de ecualización antes de la modulación (Sklar, s2.7).</td>
           </tr>
           <tr>
             <td><strong>Salida</strong></td>
             <td>Directorio donde se guardan figuras y logs del Formateo. Los bits formateados se materializan en la etapa de Modulación como <code>bits_formateo.bin</code> (alias <code>bits_from_lab1.bin</code>).</td>
-            <td>outputs_ui/lab1/</td>
+            <td>Solo afecta la organización de archivos. Los bits formateados se materializan en Modulación como <code>bits_formateo.bin</code> para garantizar trazabilidad entre etapas.</td>
             <td>No afecta el DSP; solo organiza los resultados en una ruta diferente.</td>
             <td>Igual: cualquier ruta válida es aceptable.</td>
             <td>La ruta de salida se documenta para trazabilidad; la etapa de Modulación genera y guarda <code>bits_formateo.bin</code> como salida encadenada.</td>
@@ -113,7 +113,7 @@
           <tr>
             <td><strong>Frecuencia de muestreo fs [Hz]</strong></td>
             <td>Tasa de muestreo objetivo del audio. Se usa resample_poly si el WAV tiene una fs distinta. El teorema de Nyquist exige fs ≥ 2·BW.</td>
-            <td>16000 Hz (voz de calidad, BW ≈ 8 kHz)</td>
+            <td>El teorema de Nyquist–Shannon establece fs ≥ 2·BW para evitar aliasing. Sklar (s2.4) recomienda fs ≈ 2.2·BW en la práctica para contemplar la banda de transición del filtro anti-aliasing.</td>
             <td>Mayor fs → mejor representación temporal y espectral, más muestras, mayor tasa de bits de salida.</td>
             <td>Menor fs → posible aliasing si fs &lt; 2·BW. Para voz telefónica (BW ≈ 4 kHz) basta con 8000 Hz.</td>
             <td>Mayor fs → mayor tasa binaria → más símbolos a modular en Modulación. Para voz, 16 kHz es el balance calidad/coste recomendado.</td>
@@ -121,7 +121,7 @@
           <tr>
             <td><strong>Bits de cuantización (n_bits)</strong></td>
             <td>Resolución del cuantizador. Define cuántos niveles = 2^n_bits se usan para representar cada muestra de la señal de audio.</td>
-            <td>8 bits (256 niveles, estándar G.711)</td>
+            <td>Con n bits se obtienen 2ⁿ niveles. El SQNR uniforme crece aproximadamente 6 dB por bit adicional (Oppenheim, s4.8). Con µ-law, 8 bits dan SQNR equivalente a 12–13 bits uniformes para voz (Sklar, s2.7.3).</td>
             <td>Más bits → menor error de cuantización (MSE ↓, SQNR ↑), mayor tasa binaria y mayor ancho de banda requerido.</td>
             <td>Menos bits → mayor error y ruido de cuantización (MSE ↑, SQNR ↓), menor tasa binaria pero posible degradación audible.</td>
             <td>Con µ-law, 8 bits dan un SQNR equivalente al de 12–13 bits uniformes para señales de voz. Reducir n_bits aumenta la tasa de error en el receptor del Canal y Rx.</td>
@@ -129,7 +129,7 @@
           <tr>
             <td><strong>Cuantizador</strong></td>
             <td>Esquema de cuantización: uniforme (niveles lineales), µ-law (companding logarítmico G.711), o ambos para comparación simultánea.</td>
-            <td>µ-law (recomendado para voz)</td>
+            <td>La cuantización uniforme es ineficiente para señales con distribución Laplaciana (voz): asigna igual resolución a amplitudes raras y frecuentes. µ-law resuelve esto con companding logarítmico (ITU-T G.711).</td>
             <td>"Ambos" genera gráficas y tablas comparativas de MSE y SQNR para los dos esquemas en paralelo.</td>
             <td>"Uniforme" simplifica el pipeline pero la voz (distribución Laplaciana) queda con resolución insuficiente en bajas amplitudes.</td>
             <td>µ-law produce bits más balanceados que el uniforme, reduciendo la carga sobre el scrambler para alcanzar P(0) ≈ P(1).</td>
@@ -137,7 +137,7 @@
           <tr>
             <td><strong>µ (solo µ-law)</strong></td>
             <td>Intensidad del companding logarítmico. Controla cuánto se expanden las amplitudes pequeñas y se comprimen las grandes antes de cuantizar.</td>
-            <td>255 (estándar ITU-T G.711, América del Norte y Japón)</td>
+            <td>La transformación F(x) = sgn(x)·ln(1+µ|x|)/ln(1+µ) expande amplitudes bajas y comprime altas. Con µ=255 el SQNR es prácticamente constante en todo el rango dinámico (Sklar, s2.7.3).</td>
             <td>µ más alto → más companding → mejor resolución en amplitudes bajas → SQNR más uniforme en todo el rango dinámico.</td>
             <td>µ → 0 → companding casi nulo → comportamiento casi idéntico al cuantizador uniforme → SQNR varía con la amplitud de la señal.</td>
             <td>µ=255 maximiza el SQNR para señales de voz (visible en el barrido de SQNR/MSE). Cambiar µ modifica el SQNR pero no la tasa binaria.</td>
@@ -145,7 +145,7 @@
           <tr>
             <td><strong>LFSR seed</strong></td>
             <td>Estado inicial (semilla) del registro de desplazamiento lineal con retroalimentación (LFSR) usado en el scrambler. Debe ser distinto de cero.</td>
-            <td>0b1010110011 (semilla no nula requerida para que el LFSR funcione)</td>
+            <td>El LFSR en estado todo-ceros produce PRBS nula (estado absorbente). Cualquier semilla no nula garantiza la evolución del registro. La misma semilla debe usarse en el descrambler del receptor.</td>
             <td>Diferente semilla → secuencia PRBS diferente, pero con las mismas propiedades estadísticas si los taps forman un polinomio primitivo.</td>
             <td>La semilla no puede ser todo ceros (estado nulo del LFSR). Cualquier valor no nulo dentro del rango del bitwidth es válido.</td>
             <td>Debe usarse la misma semilla en transmisor y receptor para el descrambling correcto en Modulación/3. Documentar la semilla en el informe.</td>
@@ -153,7 +153,7 @@
           <tr>
             <td><strong>LFSR taps (coma)</strong></td>
             <td>Posiciones de los bits de retroalimentación del LFSR. Determinan el polinomio generador y la calidad pseudoaleatoria de la secuencia PRBS.</td>
-            <td>9,6 (polinomio primitivo para registro de 10 bits → período máximo = 2^10−1 = 1023)</td>
+            <td>Los taps definen el polinomio generador del LFSR. Si el polinomio es primitivo sobre GF(2), el período de la secuencia PRBS es 2ᴺ−1 (período máximo). Polinomios no primitivos producen períodos menores y peor balanceo.</td>
             <td>Taps correctos (polinomio primitivo) → período máximo → mejor aleatoriedad y balanceo de bits en todo el bloque.</td>
             <td>Taps incorrectos (polinomio no primitivo) → período reducido → posible repetición de patrones → peor ecualización.</td>
             <td>Para verificar que los taps forman un polinomio primitivo, consultar tablas de LFSRs de período máximo. El período debe ser ≥ longitud del bloque de bits.</td>
@@ -161,15 +161,15 @@
           <tr>
             <td><strong>LFSR bitwidth</strong></td>
             <td>Longitud del registro del LFSR (número de bits de estado). Determina el período máximo posible de la secuencia PRBS: 2^bitwidth − 1.</td>
-            <td>10 bits (período = 1023 bits)</td>
+            <td>El período de la secuencia PRBS es 2ᴺ−1. Para evitar repetición visible, el período debe ser mayor que la longitud del bloque de bits a procesar. Registros más largos aumentan el período exponencialmente.</td>
             <td>Registro más largo → período potencialmente mayor → la secuencia PRBS tarda más en repetirse → scrambling más efectivo para bloques largos.</td>
             <td>Registro más corto → período más corto → posible repetición de patrón en bloques grandes → ecualización menos efectiva.</td>
-            <td>Para señales de voz largas (> 1 Mbit) conviene un bitwidth ≥ 20 para evitar que el PRBS se repita y degrade la aleatorización.</td>
+            <td>El período 2ᴺ−1 debe superar la longitud del bloque de bits a procesar. Si el PRBS se repite dentro del bloque, la ecualización pierde efectividad en la segunda mitad. Para bloques muy largos, usar un N mayor.</td>
           </tr>
           <tr>
             <td><strong>Bins hist amplitud A</strong></td>
             <td>Número de intervalos del histograma de amplitudes de la señal de audio (antes del formateo). Solo afecta la visualización, no el procesamiento.</td>
-            <td>50 bins</td>
+            <td>El número de bins del histograma afecta solo la visualización. Un número insuficiente oculta la forma de la distribución; uno excesivo produce barras ruidosas con pocas muestras por intervalo.</td>
             <td>Más bins → mayor detalle visual, pero cada bin tiene menos muestras y el histograma puede verse más ruidoso.</td>
             <td>Menos bins → vista más suave y legible, con menos detalle fino en los extremos de la distribución.</td>
             <td>Solo afecta la figura de salida. Para voz, 50 bins es suficiente para apreciar la distribución Laplaciana característica (pico en cero, colas cortas).</td>
@@ -177,7 +177,7 @@
           <tr>
             <td><strong>Entropía step A</strong></td>
             <td>Paso en bits para calcular la curva de evolución de entropía de la Fuente A (audio). Define la granularidad temporal de la estimación.</td>
-            <td>10000 bits</td>
+            <td>La entropía H(p) = −[P(0)·log₂P(0) + P(1)·log₂P(1)] se estima en ventanas de este tamaño. Ventanas más grandes reducen la varianza de la estimación pero ocultan variaciones locales (silencios, picos de energía).</td>
             <td>Paso grande → curva más estable con menos puntos; oculta variaciones locales de entropía entre segmentos de audio.</td>
             <td>Paso pequeño → curva más detallada y fluctuante; puede revelar segmentos silenciosos o ruidosos con entropía diferente al promedio.</td>
             <td>La entropía estabilizada cerca de H=1 tras el scrambling confirma que la fuente está lista para el Modulación. Una curva plana es señal de buena ecualización.</td>
@@ -185,7 +185,7 @@
           <tr>
             <td><strong>Entropía step B</strong></td>
             <td>Paso en bits para calcular la curva de evolución de entropía de la Fuente B (texto). El texto tiene muchos menos bits que el audio.</td>
-            <td>500 bits</td>
+            <td>El texto tiene muchos menos bits que el audio; ventanas pequeñas permiten apreciar la evolución de la entropía a lo largo del bloque. El mismo criterio teórico de H aplica: H=1 indica fuente equiprobable.</td>
             <td>Paso grande → curva más suave y convergencia más rápida al valor final de entropía.</td>
             <td>Paso pequeño → curva más ruidosa; útil para ver cómo evoluciona la entropía con el tamaño del bloque de texto analizado.</td>
             <td>El texto tiene H inicial baja (ej. H≈0.88 para ASCII genérico) y mejora notablemente con scrambling. El gráfico debe mostrar ambas curvas (antes/después) para el informe.</td>
@@ -193,7 +193,7 @@
           <tr>
             <td><strong>µ para SQNR/MSE</strong></td>
             <td>Lista de valores de µ a evaluar en el barrido comparativo de SQNR y MSE. Permite visualizar la sensibilidad del companding al parámetro µ.</td>
-            <td>1,25,50,100,255</td>
+            <td>El barrido de µ permite visualizar la curva SQNR vs µ y verificar que el estándar G.711 (µ=255) maximiza el SQNR para señales de voz con distribución Laplaciana (Sklar, s2.7.3).</td>
             <td>Más valores en la lista → comparación más completa y curvas más detalladas, a costa de mayor tiempo de cálculo.</td>
             <td>Menos valores → análisis más rápido, con menor cobertura del espacio de parámetros.</td>
             <td>El barrido permite demostrar que µ=255 maximiza el SQNR para voz, validando el estándar G.711. Incluir este gráfico en el informe con una tabla de valores numéricos.</td>
@@ -286,8 +286,8 @@
           </ul>
           <p><strong>Efectos medidos en el experimento:</strong></p>
           <ul>
-            <li>Fuente A con scrambling: P(0)=0.5003, H=0.9999997 ≈ ideal.</li>
-            <li>Fuente B con scrambling: P(0)=0.45, P(1)=0.55, H=0.9928 — gran mejora desde H=0.88.</li>
+            <li>Fuente A con scrambling: P(0) ≈ P(1) ≈ 0.5, H ≈ 1 bit/bit — la XOR con la PRBS equiprobable garantiza equiprobabilidad independientemente de la distribución de entrada.</li>
+            <li>Fuente B con scrambling: P(0) ≈ P(1) ≈ 0.5, H ≈ 1 bit/bit — el scrambler elimina el sesgo estructural del ASCII. El grado de mejora depende del desbalance inicial de la fuente.</li>
           </ul>
           <p><strong>Importante:</strong> el scrambling no comprime ni reduce la tasa de bits. Su función es aleatorizar la secuencia para facilitar la recuperación de reloj y el sincronismo en el receptor. El descrambler del receptor debe usar la misma semilla y los mismos taps.</p>
         </div>
@@ -314,12 +314,12 @@
           <p><strong>Curva de evolución de entropía:</strong> se calcula H en bloques sucesivos (según entropy_step_a/b). Una curva plana en H≈1 indica que la secuencia es estacionaria y que el scrambler es efectivo en todo el bloque. Variaciones bruscas revelan segmentos con distribución distinta (silencios, ruido, cambios de locutor).</p>
           <p><strong>Tabla comparativa de resultados experimentales:</strong></p>
           <ul>
-            <li>Fuente A antes: H = 0.9999 (µ-law ya balancea bien)</li>
-            <li>Fuente A + scrambling: H = 0.9999997 ≈ ideal</li>
-            <li>Fuente A + Huffman: H = 0.9987 (ligera degradación por cambio de distribución de bits)</li>
-            <li>Fuente B antes: H = 0.88 (desbalanceado)</li>
-            <li>Fuente B + scrambling: H = 0.9928 (gran mejora)</li>
-            <li>Fuente B + Huffman: H = 0.9710</li>
+            <li><strong>Fuente A (µ-law, antes):</strong> H próxima a 1 bit/bit — el companding logarítmico de G.711 redistribuye los niveles de cuantización de forma que los bits resultantes son casi equiprobables.</li>
+            <li><strong>Fuente A + scrambling:</strong> H ≈ 1 bit/bit — la XOR con PRBS equiprobable garantiza P(0)=P(1)=0.5 con independencia del contenido de la señal.</li>
+            <li><strong>Fuente A + Huffman:</strong> H ligeramente inferior a 1 — los bits de longitud variable de Huffman no son necesariamente equiprobables aunque la longitud media se aproxime a la entropía de la fuente.</li>
+            <li><strong>Fuente B (texto, antes):</strong> H < 1 bit/bit — el sesgo estructural del ASCII (bit 7 siempre en 0) reduce la entropía. El grado de desbalance depende del contenido del texto.</li>
+            <li><strong>Fuente B + scrambling:</strong> H ≈ 1 bit/bit — el scrambler elimina el sesgo; la mejora es más pronunciada cuanto mayor era el desbalance inicial.</li>
+            <li><strong>Fuente B + Huffman:</strong> H inferior a la del scrambling — el código Huffman optimiza la longitud media pero los bits resultantes no son equiprobables.</li>
           </ul>
         </div>
 
@@ -328,7 +328,7 @@
           <p>La salida del Formateo alimenta la etapa de Modulación, que guarda la secuencia binaria ecualizada como <code>bits_formateo.bin</code> (alias <code>bits_from_lab1.bin</code>) lista para mapearse a símbolos IQ.</p>
           <p><strong>Requisitos que debe cumplir esta salida para el Modulación:</strong></p>
           <ul>
-            <li><strong>P(0) ≈ P(1) ≈ 0.5:</strong> garantiza que la constelación QPSK tenga densidad uniforme en los 4 cuadrantes (sin asimetrías). Si P(0) ≫ P(1), algunos puntos de la constelación aparecen más visitados que otros.</li>
+            <li><strong>P(0) ≈ P(1) ≈ 0.5:</strong> garantiza que la constelación (BPSK o QPSK) tenga densidad uniforme en sus puntos. Si P(0) ≠ P(1), algunos símbolos aparecen más frecuentemente que otros, introduciendo asimetría en la constelación y una componente de continua en el espectro.</li>
             <li><strong>H ≈ 1:</strong> máxima eficiencia espectral; sin sesgo DC visible en el espectro de potencia de la señal modulada.</li>
             <li><strong>Longitud suficiente:</strong> la secuencia debe tener al menos el número de bits configurado en el Modulación (parámetro bits_len). Con QPSK, cada símbolo consume 2 bits.</li>
             <li><strong>Compatibilidad de parámetros:</strong> el Modulación/3 debe conocer la semilla y taps del LFSR para descrambling (si aplica).</li>
@@ -339,7 +339,7 @@
 
       <button class="btn" type="submit">Ejecutar</button>
     <button class="btn secondary" type="button" onclick="presetLab1()">Valores típicos</button>
-    <a class="btn secondary" href="{{ url_for('index') }}">Menú principal</a>
+    <a class="btn secondary" href="{{ url_for('index') }}">Ir al Inicio</a>
   </form>
   <script>
     function presetLab1(){
