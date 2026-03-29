@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 .venv/
+.mpl-cache/
 outputs/
 *.ipynb_checkpoints
 .DS_Store

@@ -29,7 +29,6 @@ from src import lab2_rrc
 from src.audio_utils import load_wav_mono, uniform_quantize, mu_law_quantize, plot_hist_bits
 from src.bits_utils import ints_to_bits
 from src.scrambling import scramble
-from src.huffman import encode
 from src import lab3_demod
 
 
@@ -152,7 +151,7 @@ def create_app() -> Flask:
                                lfsr_taps: tuple[int, ...] = (9, 6),
                                lfsr_bitwidth: int = 10) -> list[int]:
         # source: 'audio'|'text'|'concat'
-        # method: 'scrambling'|'huffman'
+        # method: 'scrambling'
         bits_audio: list[int] = []
         bits_text: list[int] = []
 
@@ -163,11 +162,7 @@ def create_app() -> Flask:
             else:
                 qA, _ = uniform_quantize(x, bits=n_bits, xmin=-1, xmax=1)
             base_bits = ints_to_bits(qA, n_bits)
-            if method == "scrambling":
-                bits_audio = [int(b) for b in scramble(base_bits, seed=lfsr_seed, taps=lfsr_taps, bitwidth=lfsr_bitwidth)]
-            else:
-                bits_huff, _, _ = encode(qA.tolist())
-                bits_audio = [int(b) for b in bits_huff]
+            bits_audio = [int(b) for b in scramble(base_bits, seed=lfsr_seed, taps=lfsr_taps, bitwidth=lfsr_bitwidth)]
 
         if source in {"text", "concat"}:
             txt = open(text, "r", encoding="utf-8").read()
@@ -177,11 +172,7 @@ def create_app() -> Flask:
             for val in bytes_list:
                 for bit in range(7, -1, -1):
                     base_bits_b.append((val >> bit) & 1)
-            if method == "scrambling":
-                bits_text = [int(b) for b in scramble(base_bits_b, seed=lfsr_seed, taps=lfsr_taps, bitwidth=lfsr_bitwidth)]
-            else:
-                bits_huff_b, _, _ = encode(bytes_list)
-                bits_text = [int(b) for b in bits_huff_b]
+            bits_text = [int(b) for b in scramble(base_bits_b, seed=lfsr_seed, taps=lfsr_taps, bitwidth=lfsr_bitwidth)]
 
         if source == "audio":
             return bits_audio
@@ -308,7 +299,7 @@ def create_app() -> Flask:
             {
                 "id": "lab1",
                 "title": "Formateo",
-                "desc": "Formateo y ecualización del histograma (scrambling/Huffman)",
+                "desc": "Formateo y ecualización del histograma (scrambling)",
                 "link": url_for("lab1_page"),
             },
             {
@@ -580,7 +571,7 @@ def create_app() -> Flask:
         n_bits = int(l1.get("n_bits") or 8)
         quantizer = (l1.get("quantizer") or "mulaw").lower()
         source = (l1.get("source") or "audio").lower()  # audio|text|concat
-        method = (l1.get("method") or "scrambling").lower()  # scrambling|huffman
+        method = (l1.get("method") or "scrambling").lower()
         l1_mu = _parse_int_auto(l1.get("mu"), 255)
         l1_seed = _parse_int_auto(l1.get("lfsr_seed"), int("0b1010110011", 2))
         taps_str = (str(l1.get("lfsr_taps")) if l1.get("lfsr_taps") is not None else "9,6").strip()
@@ -604,7 +595,7 @@ def create_app() -> Flask:
                 raise ValueError("n_bits (Formateo) debe estar entre 1 y 16")
             if quantizer not in {"mulaw", "uniform"}:
                 raise ValueError("quantizer (Formateo) inválido")
-            if method not in {"scrambling", "huffman", "both"}:
+            if method != "scrambling":
                 raise ValueError("method (Formateo) inválido")
             # Construir bits desde Formateo con parámetros avanzados
             import numpy as _np
@@ -700,17 +691,14 @@ def create_app() -> Flask:
                 return {"paths": gen, "audit": audit, "n_bits": len(bits_local), "out": str(out_dir_use), "label": label}
 
             source_label = "Audio" if source == "audio" else ("Texto" if source == "text" else "Concat")
-            methods = ["scrambling", "huffman"] if method == "both" else [method]
-
             if source == "separate":
                 runs = {}
                 for src in ["audio", "text"]:
                     src_label = "Audio" if src == "audio" else "Texto"
-                    for m in methods:
-                        key = f"{src}_{m}" if method == "both" else src
-                        label = f"{src_label} - {m.title()}" if method == "both" else src_label
-                        out_dir_use = base_abs / src / m if method == "both" else base_abs / src
-                        runs[key] = _run_one(label, src, m, out_dir_use)
+                    key = src
+                    label = src_label
+                    out_dir_use = base_abs / src
+                    runs[key] = _run_one(label, src, method, out_dir_use)
                 _write_json(base_abs / "params.json", {
                     "mode": "separate",
                     "lab2": {"modulation": mod, "sps": sps, "rolloff": alpha, "span": span, "seed": seed},
@@ -721,24 +709,6 @@ def create_app() -> Flask:
                     "runs": {k: v["out"] for k, v in runs.items()},
                 })
                 return jsonify({"ok": True, "out": str(base_abs), "mode": "separate", "runs": runs, "formateo": formateo_payload})
-
-            if method == "both":
-                runs = {}
-                for m in methods:
-                    key = m
-                    label = f"{source_label} - {m.title()}"
-                    out_dir_use = base_abs / m
-                    runs[key] = _run_one(label, source, m, out_dir_use)
-                _write_json(base_abs / "params.json", {
-                    "mode": "both",
-                    "lab2": {"modulation": mod, "sps": sps, "rolloff": alpha, "span": span, "seed": seed},
-                    "lab1": {"audio": audio, "text": text, "fs": fs, "n_bits": n_bits, "quantizer": quantizer,
-                             "source": source, "method": method, "mu": l1_mu, "lfsr_seed": l1_seed,
-                             "lfsr_taps": list(l1_taps), "lfsr_bitwidth": l1_bitwidth},
-                    "out": str(base_abs),
-                    "runs": {k: v["out"] for k, v in runs.items()},
-                })
-                return jsonify({"ok": True, "out": str(base_abs), "mode": "both", "runs": runs, "formateo": formateo_payload})
 
             # Modo normal (una sola fuente o concat)
             result = _run_one(source_label, source, method, base_abs)

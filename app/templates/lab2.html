@@ -87,8 +87,6 @@
     <label>Método de ecualización</label>
     <select id="l1_method">
       <option value="scrambling" selected>Scrambling</option>
-      <option value="huffman">Huffman</option>
-      <option value="both">Ambos (Scrambling + Huffman)</option>
     </select>
   </div>
   <details class="advanced" style="grid-column: 1 / -1;">
@@ -212,9 +210,9 @@
       </tr>
       <tr>
         <td><strong>Método de ecualización</strong></td>
-        <td>Técnica de ecualización del histograma de bits proveniente del Formateo: scrambling LFSR (aleatorización XOR) o codificación Huffman (compresión variable).</td>
-        <td>El scrambling LFSR aplica XOR bit a bit con una PRBS, garantizando P(0)≈P(1)≈0.5 sin comprimir. Huffman comprime la fuente (reduce tasa binaria) pero genera bits no equiprobables y requiere transmitir la tabla de códigos al receptor.</td>
-        <td>Huffman comprime la fuente → menos bits de entrada al modulador, pero requiere transmitir la tabla de códigos al receptor.</td>
+        <td>Técnica de ecualización del histograma de bits proveniente del Formateo: scrambling LFSR (aleatorización XOR).</td>
+        <td>El scrambling LFSR aplica XOR bit a bit con una PRBS, garantizando P(0)≈P(1)≈0.5 sin comprimir ni alterar la longitud base de la secuencia.</td>
+        <td>Se conserva la tasa binaria original, pero se obtiene una secuencia más apta para modular sin sesgo DC ni asimetrías en la constelación.</td>
         <td>Scrambling no comprime pero es más robusto y compatible con sistemas en tiempo real. Preferido para transmisión de voz.</td>
         <td>Con cualquier método, la auditoría de coherencia (p0=p1=0.5, H=1.0) verifica que la entrada al modulador es estadísticamente óptima.</td>
       </tr>
@@ -520,19 +518,15 @@
       const raw = String(key || '');
       const k = raw.toLowerCase();
       const map = {
-        'audio/huffman': 'Etapa de Modulación de Audio con EQ Huffman',
         'audio/scrambling': 'Etapa de Modulación de Audio con EQ Scrambler',
-        'text/huffman': 'Etapa de Modulación de Texto con EQ Huffman',
         'text/scrambling': 'Etapa de Modulación de Texto con EQ Scrambler',
-        'audio_huffman': 'Etapa de Modulación de Audio con EQ Huffman',
         'audio_scrambling': 'Etapa de Modulación de Audio con EQ Scrambler',
-        'text_huffman': 'Etapa de Modulación de Texto con EQ Huffman',
         'text_scrambling': 'Etapa de Modulación de Texto con EQ Scrambler'
       };
       return map[k] || raw.replace(/_/g, ' ');
     }
     function orderedKeys(obj) {
-      const pref = ['audio/huffman', 'audio/scrambling', 'text/huffman', 'text/scrambling'];
+      const pref = ['audio/scrambling', 'text/scrambling', 'audio_scrambling', 'text_scrambling'];
       const keys = Object.keys(obj || {});
       const set = new Set(keys);
       const ordered = [];

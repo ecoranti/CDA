@@ -216,7 +216,7 @@
           <ul>
             <li><strong>Fuente A (voz/audio):</strong> señal analógica → muestreo → cuantización µ-law → codificación binaria.</li>
             <li><strong>Fuente B (texto):</strong> caracteres ASCII/UTF-8 → bytes → bits 0/1 (sin cuantización, ya es digital).</li>
-            <li><strong>Ecualización:</strong> scrambling LFSR o codificación Huffman para balancear la distribución de bits.</li>
+            <li><strong>Ecualización:</strong> scrambling LFSR para balancear la distribución de bits antes de la modulación.</li>
           </ul>
         </div>
 
@@ -293,21 +293,7 @@
         </div>
 
         <div class="doc-card">
-          <h4>7) Codificación Huffman: compresión como alternativa</h4>
-          <p>La codificación Huffman asigna palabras de código de longitud variable: códigos cortos a símbolos frecuentes y largos a los raros. A diferencia del scrambling, <em>sí comprime</em> la fuente, reduciendo la tasa de bits.</p>
-          <p><strong>Principio:</strong> se construye un árbol binario óptimo (árbol de Huffman) a partir de las probabilidades de los símbolos, garantizando que la longitud media del código se aproxime a la entropía H de la fuente.</p>
-          <p><strong>Trade-off frente al scrambling:</strong></p>
-          <ul>
-            <li><strong>Ventaja de Huffman:</strong> reduce la tasa binaria → menor ancho de banda requerido en transmisión.</li>
-            <li><strong>Desventaja de Huffman:</strong> requiere transmitir la tabla de códigos al receptor → mayor complejidad, overhead y latencia. Sensible a errores de canal (un error puede propagar pérdida de sincronismo).</li>
-            <li><strong>Ventaja del scrambling:</strong> simple, sin latencia, sin metadatos adicionales, robusto a errores de canal.</li>
-            <li><strong>Desventaja del scrambling:</strong> no comprime; la tasa binaria no se reduce.</li>
-          </ul>
-          <p>En términos esperados, Huffman comprime más cuando la fuente tiene redundancia (algunos símbolos aparecen mucho más que otros) y comprime menos cuando la distribución de símbolos es más uniforme. En este laboratorio, la rama de audio cuantizado (según cuantizador y n_bits) y la rama de texto pueden mostrar compresibilidades distintas. El resultado final depende de la configuración elegida (fs, n_bits, cuantizador, µ, fuente y método) y debe analizarse con los valores obtenidos en cada corrida.</p>
-        </div>
-
-        <div class="doc-card">
-          <h4>8) Entropía: cálculo e interpretación</h4>
+          <h4>7) Entropía: cálculo e interpretación</h4>
           <p>La <strong>entropía binaria</strong> mide la incertidumbre promedio por símbolo de la fuente (en bits/bit para una fuente binaria):</p>
           <p><code>H = −[P(0)·log₂P(0) + P(1)·log₂P(1)]</code></p>
           <p>El <strong>máximo teórico</strong> es H = 1 bit/bit, alcanzado cuando P(0) = P(1) = 0.5 (máxima incertidumbre, fuente equiprobable). Cualquier desbalance reduce H.</p>
@@ -316,15 +302,13 @@
           <ul>
             <li><strong>Fuente A (µ-law, antes):</strong> H próxima a 1 bit/bit — el companding logarítmico de G.711 redistribuye los niveles de cuantización de forma que los bits resultantes son casi equiprobables.</li>
             <li><strong>Fuente A + scrambling:</strong> H ≈ 1 bit/bit — la XOR con PRBS equiprobable garantiza P(0)=P(1)=0.5 con independencia del contenido de la señal.</li>
-            <li><strong>Fuente A + Huffman:</strong> H ligeramente inferior a 1 — los bits de longitud variable de Huffman no son necesariamente equiprobables aunque la longitud media se aproxime a la entropía de la fuente.</li>
             <li><strong>Fuente B (texto, antes):</strong> H < 1 bit/bit — el sesgo estructural del ASCII (bit 7 siempre en 0) reduce la entropía. El grado de desbalance depende del contenido del texto.</li>
             <li><strong>Fuente B + scrambling:</strong> H ≈ 1 bit/bit — el scrambler elimina el sesgo; la mejora es más pronunciada cuanto mayor era el desbalance inicial.</li>
-            <li><strong>Fuente B + Huffman:</strong> H inferior a la del scrambling — el código Huffman optimiza la longitud media pero los bits resultantes no son equiprobables.</li>
           </ul>
         </div>
 
         <div class="doc-card">
-          <h4>9) Conexión con Modulación: requisitos de la salida</h4>
+          <h4>8) Conexión con Modulación: requisitos de la salida</h4>
           <p>La salida del Formateo alimenta la etapa de Modulación, que guarda la secuencia binaria ecualizada como <code>bits_formateo.bin</code> (alias <code>bits_from_lab1.bin</code>) lista para mapearse a símbolos IQ.</p>
           <p><strong>Requisitos que debe cumplir esta salida para el Modulación:</strong></p>
           <ul>

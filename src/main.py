@@ -12,7 +12,6 @@ from .audio_utils import (
 )
 from .bits_utils import ints_to_bits, bits_to_bytes, bits_entropy_stats
 from .scrambling import scramble
-from .huffman import encode
 from .report import write_markdown, save_metrics_csv
 from . import sqnr_eval
 
@@ -61,11 +60,9 @@ def process_audio(
         if use_mulaw:
             before_png = os.path.join(figdir, "A_bits_hist_before.png")
             scr_png    = os.path.join(figdir, "A_bits_hist_scrambled.png")
-            huf_png    = os.path.join(figdir, "A_bits_hist_huffman.png")
         else:
             before_png = os.path.join(figdir, f"A_bits_hist_before_{prefix}.png")
             scr_png    = os.path.join(figdir, f"A_bits_hist_scrambled_{prefix}.png")
-            huf_png    = os.path.join(figdir, f"A_bits_hist_huffman_{prefix}.png")
 
         # Histogramas individuales (probabilidad en eje Y)
         plot_hist_bits(bitsA, f"Fuente A ({q_name}): histograma de bits (antes)", before_png, as_probability=True)
@@ -74,11 +71,7 @@ def process_audio(
         bitsA_scr = scramble(bitsA, seed=lfsr_seed, taps=lfsr_taps, bitwidth=lfsr_bitwidth)
         plot_hist_bits(bitsA_scr, f"Fuente A ({q_name}): histograma de bits (scrambling)", scr_png, as_probability=True)
 
-        # 5) Huffman (sobre símbolos cuantizados, no sobre bits)
-        bitsA_huff, codeA, LavgA = encode(qA.tolist())
-        plot_hist_bits(bitsA_huff, f"Fuente A ({q_name}): histograma de bits (Huffman)", huf_png, as_probability=True)
-
-        # 6) Comparativa y evolución de entropía
+        # 5) Comparativa y evolución de entropía
         plot_hist_bits_compare(
             bitsA, "Antes", bitsA_scr, "Scrambling",
             "Fuente A: histogramas comparativos (probabilidad)",
@@ -92,22 +85,13 @@ def process_audio(
             os.path.join(figdir, f"A_entropy_evolution_{prefix}.png"),
             step=entropy_step
         )
-        # Huffman en gráfico separado (bits no equiprobables)
-        plot_entropy_evolution(
-            [bitsA_huff],
-            [f"{q_name} + huffman (bits no equiprobables)"],
-            os.path.join(figdir, f"A_entropy_evolution_huffman_{prefix}.png"),
-            step=entropy_step
-        )
-        # 7) Métricas
+        # 6) Métricas
         p0A, p1A, HA, varA = bits_entropy_stats(bitsA)
         p0A_s, p1A_s, HA_s, varA_s = bits_entropy_stats(bitsA_scr)
-        p0A_h, p1A_h, HA_h, varA_h = bits_entropy_stats(bitsA_huff)
 
         rows_local.extend([
             (f"Fuente A [{q_name}] – Antes", p0A, p1A, HA, varA, float("nan")),
             (f"Fuente A [{q_name}] – Scrambling", p0A_s, p1A_s, HA_s, varA_s, float("nan")),
-            (f"Fuente A [{q_name}] – Huffman", p0A_h, p1A_h, HA_h, varA_h, LavgA),
         ])
 
     if quantizer == "mulaw":
@@ -149,12 +133,7 @@ def process_text(
     scr_png = os.path.join(figdir, "B_bits_hist_scrambled.png")
     plot_hist_bits(bitsB_scr, "Fuente B: histograma de bits (scrambling)", scr_png, as_probability=True)
 
-    # 4) Huffman (sobre bytes del texto)
-    bitsB_huff, codeB, LavgB = encode(bytes_list)
-    huf_png = os.path.join(figdir, "B_bits_hist_huffman.png")
-    plot_hist_bits(bitsB_huff, "Fuente B: histograma de bits (Huffman)", huf_png, as_probability=True)
-
-    # 5) Comparativa y evolución de entropía
+    # 4) Comparativa y evolución de entropía
     plot_hist_bits_compare(
         bitsB, "Antes", bitsB_scr, "Scrambling",
         "Fuente B: histogramas comparativos (probabilidad)",
@@ -168,23 +147,14 @@ def process_text(
         os.path.join(figdir, "B_entropy_evolution.png"),
         step=entropy_step
     )
-    # Huffman en gráfico separado (bits no equiprobables)
-    plot_entropy_evolution(
-        [bitsB_huff],
-        ["Texto + huffman (bits no equiprobables)"],
-        os.path.join(figdir, "B_entropy_evolution_huffman.png"),
-        step=entropy_step
-    )
 
-    # 6) Métricas
+    # 5) Métricas
     p0B, p1B, HB, varB = bits_entropy_stats(bitsB)
     p0B_s, p1B_s, HB_s, varB_s = bits_entropy_stats(bitsB_scr)
-    p0B_h, p1B_h, HB_h, varB_h = bits_entropy_stats(bitsB_huff)
 
     return (
         ("Fuente B – Antes", p0B, p1B, HB, varB, float("nan")),
         ("Fuente B – Scrambling", p0B_s, p1B_s, HB_s, varB_s, float("nan")),
-        ("Fuente B – Huffman", p0B_h, p1B_h, HB_h, varB_h, LavgB),
     )
 
 

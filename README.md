@@ -2,7 +2,7 @@
 
 Este repositorio integra los pipelines de procesamiento para la materia **Comunicación Digital Avanzada**. Incluye una **interfaz web Flask** unificada para ejecutar y visualizar las tres etapas de la cadena Tx/Rx:
 
-*   **Formateo**: Muestreo/re-muestreo, cuantización (Uniforme/$\mu$-law), codificación binaria, compresión (Huffman) y scrambling.
+*   **Formateo**: Muestreo/re-muestreo, cuantización (Uniforme/$\mu$-law), codificación binaria y scrambling.
 *   **Modulación**: Mapeo de símbolos (BPSK/QPSK), sobremuestreo y filtro conformador de pulso RRC.
 *   **Canal y Rx**: Canal AWGN, filtro acoplado, muestreo óptimo, decisión ML/MAP y estimación de BER.
 
@@ -74,7 +74,7 @@ Verás el menú principal con acceso a las tres etapas.
 
 ### Formateo
 Convierte señales analógicas (audio) o texto a un flujo de bits digital.
-*   **Features**: Cuantización ajustable (bits, $\mu$), codificación entrópica (Huffman) y aleatorización (Scrambling).
+*   **Features**: Cuantización ajustable (bits, $\mu$) y aleatorización (Scrambling).
 *   **Salida**: Gráficos de histogramas de bits, evolución de entropía, comparativas de SQNR/MSE.
 
 ### Modulación: Transmisor Digital
@@ -141,7 +141,7 @@ flowchart LR
     subgraph L1["Formateo: Fuente Digital"]
         direction TB
         S1["Fuente de información<br/>(Audio/Texto)"] --> S2["Muestreo + Cuantización<br/>(Uniforme o µ-law)"]
-        S2 --> S3["Codificación / Ecualización<br/>(Huffman o Scrambling)"]
+        S2 --> S3["Codificación / Ecualización<br/>(Scrambling)"]
         S3 --> S4["Bits de salida (Rb)"]
     end
 

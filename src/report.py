@@ -30,17 +30,13 @@ def write_markdown(out_dir: str):
 
     a_before = pick("A_bits_hist_before") or "figures/A_bits_hist_before.png"
     a_scr = pick("A_bits_hist_scrambled") or "figures/A_bits_hist_scrambled.png"
-    a_huf = pick("A_bits_hist_huffman") or "figures/A_bits_hist_huffman.png"
     a_cmp = pick("A_bits_hist_compare")
     a_ent = pick("A_entropy_evolution")
-    a_ent_h = pick("A_entropy_evolution_huffman")
 
     b_before = "figures/B_bits_hist_before.png"
     b_scr = "figures/B_bits_hist_scrambled.png"
-    b_huf = "figures/B_bits_hist_huffman.png"
     b_cmp = "figures/B_bits_hist_compare.png"
     b_ent = "figures/B_entropy_evolution.png"
-    b_ent_h = "figures/B_entropy_evolution_huffman.png"
 
     # Cargar métricas si existen para incrustar una tabla
     metrics_path = os.path.join(out_dir, "resumen_metricas.csv")
@@ -67,10 +63,6 @@ def write_markdown(out_dir: str):
     parts.append(f"- Audio: ![A_bits_scram]({a_scr})")
     parts.append(f"- Texto: ![B_bits_scram]({b_scr})")
 
-    parts.append("\n## 4) Huffman")
-    parts.append(f"- Audio: ![A_bits_huff]({a_huf})")
-    parts.append(f"- Texto: ![B_bits_huff]({b_huf})")
-
     # Comparativas y evolución de entropía (si existen)
     comp_blocks = []
     if a_cmp:
@@ -78,7 +70,7 @@ def write_markdown(out_dir: str):
     if os.path.exists(os.path.join(out_dir, b_cmp)):
         comp_blocks.append(f"- Texto: ![B_bits_compare]({b_cmp})")
     if comp_blocks:
-        parts.append("\n## 5) Histogramas comparativos (Antes vs Scrambling)")
+        parts.append("\n## 4) Histogramas comparativos (Antes vs Scrambling)")
         parts.extend(comp_blocks)
 
     ent_blocks = []
@@ -87,28 +79,20 @@ def write_markdown(out_dir: str):
     if os.path.exists(os.path.join(out_dir, b_ent)):
         ent_blocks.append(f"- Texto: ![B_entropy]({b_ent})")
     if ent_blocks:
-        parts.append("\n## 6) Evolución de la entropía (original + scrambler)")
+        parts.append("\n## 5) Evolución de la entropía (original + scrambler)")
         parts.extend(ent_blocks)
-        parts.append("Nota: Huffman se grafica aparte porque sus bits no son equiprobables (H(p) puede bajar).")
-
-    if a_ent_h or os.path.exists(os.path.join(out_dir, b_ent_h)):
-        parts.append("\n## 6.1) Evolución de la entropía (Huffman)")
-        if a_ent_h:
-            parts.append(f"- Audio (Huffman): ![A_entropy_huff]({a_ent_h})")
-        if os.path.exists(os.path.join(out_dir, b_ent_h)):
-            parts.append(f"- Texto (Huffman): ![B_entropy_huff]({b_ent_h})")
 
     # SQNR/MSE si existen
     sqnr_png = os.path.join(out_dir, "sqnr_comparacion.png")
     mse_png = os.path.join(out_dir, "mse_comparacion.png")
     if os.path.exists(sqnr_png) or os.path.exists(mse_png):
-        parts.append("\n## 7) Métricas adicionales de cuantización")
+        parts.append("\n## 6) Métricas adicionales de cuantización")
         if os.path.exists(sqnr_png):
             parts.append("![SQNR](sqnr_comparacion.png)")
         if os.path.exists(mse_png):
             parts.append("![MSE](mse_comparacion.png)")
 
-    parts.append("\n## 8) Métricas (tabla)")
+    parts.append("\n## 7) Métricas (tabla)")
     if metrics_md:
         parts.append(metrics_md)
     else:
@@ -116,10 +100,9 @@ def write_markdown(out_dir: str):
 
     parts.append("\n**Notas**")
     parts.append("- Scrambling: busca equiprobabilidad P(0)≈P(1) sin cambiar la tasa.")
-    parts.append("- Huffman: reduce longitud media cuando hay redundancia.")
 
     # Sección para discusión crítica (para completar manualmente)
-    parts.append("\n## 9) Discusión (para completar)")
+    parts.append("\n## 8) Discusión (para completar)")
     parts.append("- Ventajas/desventajas de las técnicas aplicadas.")
     parts.append("- Propuestas de mejora y aplicaciones.")
 
@@ -137,7 +120,7 @@ def save_metrics_csv(out_dir: str, rows):
             "P(1)",
             "Entropía [bits/bit]",
             "Varianza bits",
-            "Longitud media (Huffman)",
+            "Longitud media",
         ],
     )
     df.to_csv(os.path.join(out_dir, "resumen_metricas.csv"), index=False)
@@ -201,27 +184,17 @@ def write_pdf(out_dir: str):
     add_img(pick("A_bits_hist_scrambled"), "Histogramas de bits – Audio (scrambling)")
     add_img(os.path.join(figdir, "B_bits_hist_scrambled.png"), "Histogramas de bits – Texto (scrambling)")
 
-    # 4) Huffman
-    add_img(pick("A_bits_hist_huffman"), "Histogramas de bits – Audio (Huffman)")
-    add_img(os.path.join(figdir, "B_bits_hist_huffman.png"), "Histogramas de bits – Texto (Huffman)")
-
-    # 5) Comparativas y entropía
+    # 4) Comparativas y entropía
     add_img(pick("A_bits_hist_compare"), "Comparativa Antes vs Scrambling – Audio")
     add_img(os.path.join(figdir, "B_bits_hist_compare.png"), "Comparativa Antes vs Scrambling – Texto")
     add_img(pick("A_entropy_evolution"), "Evolución de la entropía – Audio (original + scrambler)")
     add_img(os.path.join(figdir, "B_entropy_evolution.png"), "Evolución de la entropía – Texto (original + scrambler)")
-    story.append(Paragraph("Nota: Huffman se grafica aparte porque sus bits no son equiprobables.", styles['Normal']))
-    story.append(Spacer(1, 4*mm))
-    add_img(pick("A_entropy_evolution_huffman"), "Evolución de la entropía – Audio (Huffman)")
-    add_img(os.path.join(figdir, "B_entropy_evolution_huffman.png"), "Evolución de la entropía – Texto (Huffman)")
-    story.append(Paragraph("Nota: la curva incluye original, scrambler y huffman (cuando estén disponibles).", styles['Normal']))
-    story.append(Spacer(1, 4*mm))
 
-    # 6) Métricas de cuantización
+    # 5) Métricas de cuantización
     add_img(os.path.join(out_dir, "sqnr_comparacion.png"), "Comparación de SQNR (dB)")
     add_img(os.path.join(out_dir, "mse_comparacion.png"), "Comparación de MSE")
 
-    # 7) Tabla de métricas
+    # 6) Tabla de métricas
     metrics_path = os.path.join(out_dir, "resumen_metricas.csv")
     if os.path.exists(metrics_path):
         try:
