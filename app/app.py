@@ -6,9 +6,11 @@ import threading
 import uuid
 import subprocess
 import tempfile
+import json
 from pathlib import Path
 import sys
 from typing import Optional
+import re
 
 from flask import Flask, render_template, request, redirect, url_for, send_from_directory, flash, jsonify, send_file
 
@@ -26,7 +28,7 @@ from src import report as lab1_report
 from src import report_lab3 as lab3_report
 from src import sqnr_eval as lab1_sqnr
 from src import lab2_rrc
-from src.audio_utils import load_wav_mono, uniform_quantize, mu_law_quantize, plot_hist_bits
+from src.audio_utils import load_wav_mono, uniform_quantize, a_law_quantize, plot_hist_bits
 from src.bits_utils import ints_to_bits
 from src.scrambling import scramble
 from src import lab3_demod
@@ -49,8 +51,27 @@ def create_app() -> Flask:
 
     OUTPUTS_ROOT = ROOT / "outputs_ui"
 
+    def _normalize_output_base(base: Path) -> Path:
+        p = base.expanduser()
+        ts_re = re.compile(r"^\d{8}_\d{6}$")
+        try:
+            resolved_outputs = OUTPUTS_ROOT.resolve()
+        except Exception:
+            resolved_outputs = OUTPUTS_ROOT
+        while ts_re.match(p.name or ""):
+            try:
+                parent_resolved = p.parent.resolve()
+            except Exception:
+                parent_resolved = p.parent
+            if str(parent_resolved).startswith(str(resolved_outputs)):
+                p = p.parent
+            else:
+                break
+        return p
+
     def _ts_dir(base: Path) -> Path:
         import datetime
+        base = _normalize_output_base(base)
         d = base / datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         d.mkdir(parents=True, exist_ok=True)
         (d / "figures").mkdir(parents=True, exist_ok=True)
@@ -97,8 +118,6 @@ def create_app() -> Flask:
         try:
             if not base_dir.exists():
                 return []
-            if (base_dir / "params.json").exists() and _has_iq(base_dir):
-                return [(".", base_dir)]
             runs = []
             for params in base_dir.rglob("params.json"):
                 run_dir = params.parent
@@ -113,6 +132,11 @@ def create_app() -> Flask:
                     continue
                 seen.add(rel)
                 out.append((rel, rd))
+            nested = [(rel, rd) for rel, rd in out if rel != "."]
+            if nested:
+                return nested
+            if (base_dir / "params.json").exists() and _has_iq(base_dir):
+                return [(".", base_dir)]
             return out
         except Exception:
             return []
@@ -146,25 +170,24 @@ def create_app() -> Flask:
     # Construir bits desde parámetros del Lab 1
     def _build_bits_from_lab1(audio: str, text: str, fs: int, n_bits: int, quantizer: str,
                                source: str, method: str,
-                               mu: int = 255,
                                lfsr_seed: int = 0b1010110011,
                                lfsr_taps: tuple[int, ...] = (9, 6),
                                lfsr_bitwidth: int = 10) -> list[int]:
-        # source: 'audio'|'text'|'concat'
+        # source: 'audio'|'text'
         # method: 'scrambling'
         bits_audio: list[int] = []
         bits_text: list[int] = []
 
-        if source in {"audio", "concat"}:
+        if source == "audio":
             x, _ = load_wav_mono(audio, target_fs=fs)
-            if quantizer == "mulaw":
-                qA, _ = mu_law_quantize(x, bits=n_bits, mu=mu, xmin=-1, xmax=1)
+            if quantizer == "alaw":
+                qA, _ = a_law_quantize(x, bits=n_bits, A=87.6, xmin=-1, xmax=1)
             else:
                 qA, _ = uniform_quantize(x, bits=n_bits, xmin=-1, xmax=1)
             base_bits = ints_to_bits(qA, n_bits)
             bits_audio = [int(b) for b in scramble(base_bits, seed=lfsr_seed, taps=lfsr_taps, bitwidth=lfsr_bitwidth)]
 
-        if source in {"text", "concat"}:
+        if source == "text":
             txt = open(text, "r", encoding="utf-8").read()
             b = txt.encode("utf-8")
             bytes_list = list(b)
@@ -178,63 +201,66 @@ def create_app() -> Flask:
             return bits_audio
         if source == "text":
             return bits_text
-        # concat
-        return (bits_audio or []) + (bits_text or [])
+        raise ValueError("source (Formateo) inválido. Use 'audio' o 'text'.")
 
     def _generate_formateo_outputs(out_dir: Path, audio: str, text_path: str, fs: int, n_bits: int, quantizer: str,
-                                  mu: int, lfsr_seed: int, lfsr_taps: tuple[int, ...], lfsr_bitwidth: int,
-                                  hist_bins: int = 50, entropy_step_a: int = 10000, entropy_step_b: int = 500,
-                                  sqnr_mus: list[int] | None = None) -> dict:
+                                  source: str, lfsr_seed: int, lfsr_taps: tuple[int, ...], lfsr_bitwidth: int,
+                                  hist_bins: int = 50, entropy_step_a: int = 10000, entropy_step_b: int = 500) -> dict:
         """Genera las figuras de Formateo dentro de una carpeta específica y retorna rutas relativas."""
         out_dir.mkdir(parents=True, exist_ok=True)
         figdir = lab1.ensure_dirs(str(out_dir))
 
         rows = []
-        rows.extend(lab1.process_audio(
-            audio, figdir, fs_target=fs, n_bits=n_bits, quantizer=quantizer,
-            mu_val=mu, lfsr_seed=lfsr_seed, lfsr_taps=lfsr_taps, lfsr_bitwidth=lfsr_bitwidth,
-            hist_bins=hist_bins, entropy_step=entropy_step_a,
-        ))
-        rows.extend(lab1.process_text(
-            text_path, figdir, lfsr_seed=lfsr_seed, lfsr_taps=lfsr_taps,
-            lfsr_bitwidth=lfsr_bitwidth, entropy_step=entropy_step_b,
-        ))
+        if source == "audio":
+            rows.extend(lab1.process_audio(
+                audio, figdir, fs_target=fs, n_bits=n_bits, quantizer=quantizer,
+                lfsr_seed=lfsr_seed, lfsr_taps=lfsr_taps, lfsr_bitwidth=lfsr_bitwidth,
+                hist_bins=hist_bins, entropy_step=entropy_step_a,
+            ))
+        elif source == "text":
+            rows.extend(lab1.process_text(
+                text_path, figdir, lfsr_seed=lfsr_seed, lfsr_taps=lfsr_taps,
+                lfsr_bitwidth=lfsr_bitwidth, entropy_step=entropy_step_b,
+            ))
+        else:
+            raise ValueError("source (Formateo) inválido. Use 'audio' o 'text'.")
 
-        # SQNR/MSE comparativos (igual que Formateo)
-        try:
-            x, _ = lab1.load_wav_mono(audio, target_fs=fs)
-            xhat_uni = lab1_sqnr.eval_uniform(x, bits=n_bits)
-            mse_uni = lab1_sqnr.mse(x, xhat_uni)
-            sqnr_uni = lab1_sqnr.sqnr_db(x, xhat_uni)
+        # SQNR/MSE comparativos: Uniforme vs A-law (G.711 Argentina)
+        if source == "audio":
+            try:
+                x, _ = lab1.load_wav_mono(audio, target_fs=fs)
+                xhat_uni = lab1_sqnr.eval_uniform(x, bits=n_bits)
+                mse_uni  = lab1_sqnr.mse(x, xhat_uni)
+                sqnr_uni = lab1_sqnr.sqnr_db(x, xhat_uni)
 
-            mu_vals = sqnr_mus or [1, 25, 50, 100, 255]
-            mses, sqnrs = [], []
-            for mu_val in mu_vals:
-                xhat_mu = lab1_sqnr.eval_mulaw(x, mu=mu_val, bits=n_bits)
-                mses.append(lab1_sqnr.mse(x, xhat_mu))
-                sqnrs.append(lab1_sqnr.sqnr_db(x, xhat_mu))
+                xhat_al  = lab1_sqnr.eval_alaw(x, A=87.6, bits=n_bits)
+                mse_al   = lab1_sqnr.mse(x, xhat_al)
+                sqnr_al  = lab1_sqnr.sqnr_db(x, xhat_al)
 
-            import matplotlib.pyplot as plt
-            labels = ["Uniforme"] + [f"µ={mu_val}" for mu_val in mu_vals]
-            plt.figure()
-            plt.bar(range(len([sqnr_uni] + sqnrs)), [sqnr_uni] + sqnrs)
-            plt.xticks(range(len(labels)), labels)
-            plt.ylabel("SQNR (dB)")
-            plt.title("Comparación de SQNR ({} bits)".format(n_bits))
-            plt.tight_layout()
-            plt.savefig(out_dir / "sqnr_comparacion.png", dpi=140)
-            plt.close()
+                import matplotlib.pyplot as plt
+                labels     = ["Uniforme", "A-law (87.6)"]
+                sqnrs_plot = [sqnr_uni, sqnr_al]
+                mses_plot  = [mse_uni,  mse_al]
 
-            plt.figure()
-            plt.bar(range(len([mse_uni] + mses)), [mse_uni] + mses)
-            plt.xticks(range(len(labels)), labels)
-            plt.ylabel("MSE")
-            plt.title("Comparación de MSE ({} bits)".format(n_bits))
-            plt.tight_layout()
-            plt.savefig(out_dir / "mse_comparacion.png", dpi=140)
-            plt.close()
-        except Exception:
-            pass
+                plt.figure()
+                plt.bar(range(len(sqnrs_plot)), sqnrs_plot, color=["#64748b", "#2563eb"])
+                plt.xticks(range(len(labels)), labels)
+                plt.ylabel("SQNR (dB)")
+                plt.title("Comparación de SQNR ({} bits)".format(n_bits))
+                plt.tight_layout()
+                plt.savefig(out_dir / "sqnr_comparacion.png", dpi=140)
+                plt.close()
+
+                plt.figure()
+                plt.bar(range(len(mses_plot)), mses_plot, color=["#64748b", "#2563eb"])
+                plt.xticks(range(len(labels)), labels)
+                plt.ylabel("MSE")
+                plt.title("Comparación de MSE ({} bits)".format(n_bits))
+                plt.tight_layout()
+                plt.savefig(out_dir / "mse_comparacion.png", dpi=140)
+                plt.close()
+            except Exception:
+                pass
 
         # Guardar métricas CSV para trazabilidad
         try:
@@ -260,20 +286,21 @@ def create_app() -> Flask:
 
 
     def _validate_lab1_inputs(audio: str, text: str, out_dir: str, fs: int, n_bits: int, quantizer: str,
-                              mu: int, lfsr_seed: int, lfsr_bitwidth: int, hist_bins: int,
-                              entropy_step_a: int, entropy_step_b: int, lfsr_taps: tuple[int, ...], sqnr_mus: list[int]):
-        if not os.path.isfile(audio):
+                              source: str,
+                              lfsr_seed: int, lfsr_bitwidth: int, hist_bins: int,
+                              entropy_step_a: int, entropy_step_b: int, lfsr_taps: tuple[int, ...]):
+        if source not in {"audio", "text"}:
+            raise ValueError("source (Formateo) inválido. Use 'audio' o 'text'.")
+        if source == "audio" and not os.path.isfile(audio):
             raise ValueError(f"Audio no existe: {audio}")
-        if not os.path.isfile(text):
+        if source == "text" and not os.path.isfile(text):
             raise ValueError(f"Texto no existe: {text}")
         if fs <= 0:
             raise ValueError("fs debe ser > 0")
         if not (1 <= n_bits <= 16):
             raise ValueError("n_bits debe estar entre 1 y 16")
-        if quantizer not in {"uniform", "mulaw", "both"}:
+        if quantizer not in {"uniform", "alaw", "both"}:
             raise ValueError("quantizer inválido")
-        if mu <= 0:
-            raise ValueError("mu debe ser > 0")
         if not (1 <= lfsr_bitwidth <= 32):
             raise ValueError("lfsr_bitwidth debe estar entre 1 y 32")
         if hist_bins <= 0:
@@ -283,8 +310,6 @@ def create_app() -> Flask:
         for t in lfsr_taps:
             if t < 0 or t >= lfsr_bitwidth:
                 raise ValueError("lfsr_taps fuera de rango para bitwidth")
-        if not sqnr_mus:
-            raise ValueError("sqnr_mu list vacío")
         # Intentar crear carpeta de salida
         Path(out_dir).mkdir(parents=True, exist_ok=True)
         test_path = Path(out_dir) / ".write_test"
@@ -299,7 +324,7 @@ def create_app() -> Flask:
             {
                 "id": "lab1",
                 "title": "Formateo",
-                "desc": "Formateo y ecualización del histograma (scrambling)",
+                "desc": "Muestreo, cuantización y scrambling",
                 "link": url_for("lab1_page"),
             },
             {
@@ -328,13 +353,13 @@ def create_app() -> Flask:
 
     @app.post("/lab1/run")
     def lab1_run():
+        source = (request.form.get("source") or "audio").lower()
         audio = request.form.get("audio") or DEFAULTS["audio"]
         text = request.form.get("text") or DEFAULTS["text"]
         base_out = request.form.get("out") or DEFAULTS["out_lab1"]
         fs = int(request.form.get("fs") or 16000)
         n_bits = int(request.form.get("n_bits") or 8)
-        quantizer = request.form.get("quantizer") or "mulaw"
-        mu = _parse_int_auto(request.form.get("mu"), 255)
+        quantizer = request.form.get("quantizer") or "alaw"
         lfsr_seed = _parse_int_auto(request.form.get("lfsr_seed"), int("0b1010110011", 2))
         lfsr_taps_str = (request.form.get("lfsr_taps") or "9,6").strip()
         try:
@@ -345,75 +370,68 @@ def create_app() -> Flask:
         hist_bins = _parse_int_auto(request.form.get("hist_bins"), 50)
         entropy_step_a = _parse_int_auto(request.form.get("entropy_step_a"), 10000)
         entropy_step_b = _parse_int_auto(request.form.get("entropy_step_b"), 500)
-        sqnr_mus_str = (request.form.get("sqnr_mus") or "1,25,50,100,255").strip()
-        try:
-            sqnr_mus = [int(v.strip()) for v in sqnr_mus_str.split(",") if v.strip() != ""]
-        except Exception:
-            sqnr_mus = [1, 25, 50, 100, 255]
 
         # Crear subcarpeta con timestamp para reproducibilidad
         out_dir = str(_ts_dir(Path(base_out)))
 
         try:
-            _validate_lab1_inputs(audio, text, out_dir, fs, n_bits, quantizer,
-                                  mu, lfsr_seed, lfsr_bitwidth, hist_bins, entropy_step_a, entropy_step_b, lfsr_taps, sqnr_mus)
+            _validate_lab1_inputs(audio, text, out_dir, fs, n_bits, quantizer, source,
+                                  lfsr_seed, lfsr_bitwidth, hist_bins, entropy_step_a, entropy_step_b, lfsr_taps)
             log_path = Path(out_dir) / "run_log.txt"
-            _append_log(log_path, f"Formateo start: audio={audio}, text={text}, fs={fs}, n_bits={n_bits}, quantizer={quantizer}")
+            _append_log(log_path, f"Formateo start: source={source}, audio={audio}, text={text}, fs={fs}, n_bits={n_bits}, quantizer={quantizer}")
 
             figdir = lab1.ensure_dirs(out_dir)
 
             rows = []
-            rows.extend(lab1.process_audio(audio, figdir, fs_target=fs, n_bits=n_bits, quantizer=quantizer,
-                                           mu_val=mu, lfsr_seed=lfsr_seed, lfsr_taps=lfsr_taps, lfsr_bitwidth=lfsr_bitwidth,
-                                           hist_bins=hist_bins, entropy_step=entropy_step_a))
-            rows.extend(lab1.process_text(text, figdir, lfsr_seed=lfsr_seed, lfsr_taps=lfsr_taps,
-                                          lfsr_bitwidth=lfsr_bitwidth, entropy_step=entropy_step_b))
+            if source == "audio":
+                rows.extend(lab1.process_audio(audio, figdir, fs_target=fs, n_bits=n_bits, quantizer=quantizer,
+                                               lfsr_seed=lfsr_seed, lfsr_taps=lfsr_taps, lfsr_bitwidth=lfsr_bitwidth,
+                                               hist_bins=hist_bins, entropy_step=entropy_step_a))
 
-            try:
-                x, _ = lab1.load_wav_mono(audio, target_fs=fs)
-                xhat_uni = lab1_sqnr.eval_uniform(x, bits=n_bits)
-                mse_uni = lab1_sqnr.mse(x, xhat_uni)
-                sqnr_uni = lab1_sqnr.sqnr_db(x, xhat_uni)
+                try:
+                    x, _ = lab1.load_wav_mono(audio, target_fs=fs)
+                    xhat_uni = lab1_sqnr.eval_uniform(x, bits=n_bits)
+                    mse_uni = lab1_sqnr.mse(x, xhat_uni)
+                    sqnr_uni = lab1_sqnr.sqnr_db(x, xhat_uni)
 
-                mu_vals = sqnr_mus
-                mses, sqnrs = [], []
-                for mu in mu_vals:
-                    xhat_mu = lab1_sqnr.eval_mulaw(x, mu=mu, bits=n_bits)
-                    mses.append(lab1_sqnr.mse(x, xhat_mu))
-                    sqnrs.append(lab1_sqnr.sqnr_db(x, xhat_mu))
+                    xhat_al  = lab1_sqnr.eval_alaw(x, A=87.6, bits=n_bits)
+                    mse_al   = lab1_sqnr.mse(x, xhat_al)
+                    sqnr_al  = lab1_sqnr.sqnr_db(x, xhat_al)
 
-                import matplotlib.pyplot as plt
-                labels = ["Uniforme"] + [f"µ={mu}" for mu in mu_vals]
-                # SQNR plot
-                import os as _os
-                plt.figure()
-                plt.bar(range(len([sqnr_uni] + sqnrs)), [sqnr_uni] + sqnrs)
-                plt.xticks(range(len(labels)), labels)
-                plt.ylabel("SQNR (dB)")
-                plt.title("Comparación de SQNR ({} bits)".format(n_bits))
-                plt.tight_layout()
-                plt.savefig(_os.path.join(out_dir, "sqnr_comparacion.png"), dpi=140)
-                plt.close()
+                    import matplotlib.pyplot as plt
+                    import os as _os
+                    labels     = ["Uniforme", "A-law (87.6)"]
+                    sqnrs_plot = [sqnr_uni, sqnr_al]
+                    mses_plot  = [mse_uni,  mse_al]
 
-                # MSE plot
-                plt.figure()
-                plt.bar(range(len([mse_uni] + mses)), [mse_uni] + mses)
-                plt.xticks(range(len(labels)), labels)
-                plt.ylabel("MSE")
-                plt.title("Comparación de MSE ({} bits)".format(n_bits))
-                plt.tight_layout()
-                plt.savefig(_os.path.join(out_dir, "mse_comparacion.png"), dpi=140)
-                plt.close()
+                    plt.figure()
+                    plt.bar(range(len(sqnrs_plot)), sqnrs_plot, color=["#64748b", "#2563eb"])
+                    plt.xticks(range(len(labels)), labels)
+                    plt.ylabel("SQNR (dB)")
+                    plt.title("Comparación de SQNR ({} bits)".format(n_bits))
+                    plt.tight_layout()
+                    plt.savefig(_os.path.join(out_dir, "sqnr_comparacion.png"), dpi=140)
+                    plt.close()
 
-                import pandas as pd
-                rows_sqnr = [("Uniforme", sqnr_uni, mse_uni)] + [
-                    (f"µ={mu}", s, m) for mu, s, m in zip(mu_vals, sqnrs, mses)
-                ]
-                df_sqnr = pd.DataFrame(rows_sqnr, columns=["Cuantizador", "SQNR (dB)", "MSE"])
-                df_sqnr.to_csv(os.path.join(out_dir, "sqnr_mse_resumen.csv"), index=False)
-            except Exception as ex:
-                _append_log(log_path, f"[WARN] SQNR/MSE: {ex}")
-                flash(f"[WARN] No se pudo calcular SQNR/MSE: {ex}", "warning")
+                    plt.figure()
+                    plt.bar(range(len(mses_plot)), mses_plot, color=["#64748b", "#2563eb"])
+                    plt.xticks(range(len(labels)), labels)
+                    plt.ylabel("MSE")
+                    plt.title("Comparación de MSE ({} bits)".format(n_bits))
+                    plt.tight_layout()
+                    plt.savefig(_os.path.join(out_dir, "mse_comparacion.png"), dpi=140)
+                    plt.close()
+
+                    import pandas as pd
+                    rows_sqnr = list(zip(labels, sqnrs_plot, mses_plot))
+                    df_sqnr = pd.DataFrame(rows_sqnr, columns=["Cuantizador", "SQNR (dB)", "MSE"])
+                    df_sqnr.to_csv(os.path.join(out_dir, "sqnr_mse_resumen.csv"), index=False)
+                except Exception as ex:
+                    _append_log(log_path, f"[WARN] SQNR/MSE: {ex}")
+                    flash(f"[WARN] No se pudo calcular SQNR/MSE: {ex}", "warning")
+            else:
+                rows.extend(lab1.process_text(text, figdir, lfsr_seed=lfsr_seed, lfsr_taps=lfsr_taps,
+                                              lfsr_bitwidth=lfsr_bitwidth, entropy_step=entropy_step_b))
 
             lab1_report.save_metrics_csv(out_dir, rows)
             lab1_report.write_markdown(out_dir)
@@ -424,19 +442,18 @@ def create_app() -> Flask:
                 _append_log(Path(out_dir) / "run_log.txt", f"[WARN] PDF no generado: {_e}")
             # Guardar params
             _write_json(Path(out_dir) / "params.json", {
+                "source": source,
                 "audio": audio,
                 "text": text,
                 "fs": fs,
                 "n_bits": n_bits,
                 "quantizer": quantizer,
-                "mu": mu,
                 "lfsr_seed": lfsr_seed,
                 "lfsr_taps": list(lfsr_taps),
                 "lfsr_bitwidth": lfsr_bitwidth,
                 "hist_bins": hist_bins,
                 "entropy_step_a": entropy_step_a,
                 "entropy_step_b": entropy_step_b,
-                "sqnr_mus": sqnr_mus,
                 "out": out_dir,
             })
 
@@ -450,6 +467,14 @@ def create_app() -> Flask:
     def lab1_results():
         out_dir = request.args.get("out") or DEFAULTS["out_lab1"]
         figures_dir = Path(out_dir) / "figures"
+        summary = {}
+        pp = Path(out_dir) / "params.json"
+        if pp.exists():
+            try:
+                import json
+                summary = json.loads(pp.read_text(encoding="utf-8"))
+            except Exception:
+                summary = {}
         figs = []
         if figures_dir.exists():
             for p in sorted(figures_dir.glob("*.png")):
@@ -466,7 +491,7 @@ def create_app() -> Flask:
                 log_text = lp.read_text(encoding="utf-8")
             except Exception:
                 log_text = None
-        return render_template("lab1_results.html", out=out_dir, figs=figs, files=files, log_text=log_text)
+        return render_template("lab1_results.html", out=out_dir, figs=figs, files=files, log_text=log_text, summary=summary)
 
     # ---------- Lab 2 ----------
     @app.get("/lab2")
@@ -537,7 +562,7 @@ def create_app() -> Flask:
         p = Path(out_dir)
         figs = []
         # Preferencia por nombres estándar sugeridos
-        for name in ["iq_time.png", "constellation.png", "spectrum.png", "rrc_impulse.png", "eye_diagram.png", "l1_bits_hist.png", "bits_iq_transition.png"]:
+        for name in ["iq_time.png", "constellation.png", "spectrum.png", "rrc_impulse.png", "eye_diagram.png", "l1_bits_hist.png", "bits_iq_transition.png", "rrc_discrete_upsampling.png", "rrc_discrete_shaping.png", "rrc_two_symbols.png"]:
             fn = p / name
             if fn.exists():
                 figs.append(name)
@@ -554,25 +579,24 @@ def create_app() -> Flask:
     @app.post("/api/lab2/run_from_lab1")
     def api_lab2_run_from_lab1():
         data = request.get_json(force=True) or {}
-        base_out = data.get("out_dir") or DEFAULTS["out_lab2"]
+        base_out = data.get("out_dir") or data.get("out") or DEFAULTS["out_lab2"]
         out_dir = str(_ts_dir(Path(base_out)))
         base_abs = (ROOT / out_dir).resolve() if not Path(out_dir).is_absolute() else Path(out_dir).resolve()
         # Lab2 params
         mod = (data.get("modulation") or "QPSK").upper()
         sps = int(data.get("sps") or 8)
-        alpha = float(data.get("rolloff") or 0.25)
+        alpha = float(data.get("alpha") or data.get("rolloff") or 0.25)
         span = int(data.get("span") or 8)
-        seed = int(data.get("seed") or 0)
+        seed = 0
         # Lab1 params
         l1 = data.get("lab1") or {}
         audio = l1.get("audio") or DEFAULTS["audio"]
         text = l1.get("text") or DEFAULTS["text"]
         fs = int(l1.get("fs") or 16000)
         n_bits = int(l1.get("n_bits") or 8)
-        quantizer = (l1.get("quantizer") or "mulaw").lower()
-        source = (l1.get("source") or "audio").lower()  # audio|text|concat
+        quantizer = (l1.get("quantizer") or "alaw").lower()
+        source = (l1.get("source") or "audio").lower()
         method = (l1.get("method") or "scrambling").lower()
-        l1_mu = _parse_int_auto(l1.get("mu"), 255)
         l1_seed = _parse_int_auto(l1.get("lfsr_seed"), int("0b1010110011", 2))
         taps_str = (str(l1.get("lfsr_taps")) if l1.get("lfsr_taps") is not None else "9,6").strip()
         try:
@@ -583,8 +607,8 @@ def create_app() -> Flask:
         # Generar figuras de Formateo para encadenado (una vez por corrida)
         formateo_dir = base_abs / "formateo"
         formateo_payload = _generate_formateo_outputs(
-            formateo_dir, audio, text, fs, n_bits, quantizer,
-            l1_mu, l1_seed, l1_taps, l1_bitwidth
+            formateo_dir, audio, text, fs, n_bits, quantizer, source,
+            l1_seed, l1_taps, l1_bitwidth
         )
         try:
             if sps <= 0:
@@ -593,8 +617,10 @@ def create_app() -> Flask:
                 raise ValueError("Modulación no soportada (use BPSK o QPSK)")
             if not (1 <= n_bits <= 16):
                 raise ValueError("n_bits (Formateo) debe estar entre 1 y 16")
-            if quantizer not in {"mulaw", "uniform"}:
+            if quantizer not in {"alaw", "uniform"}:
                 raise ValueError("quantizer (Formateo) inválido")
+            if source not in {"audio", "text"}:
+                raise ValueError("source (Formateo) inválido. Use 'audio' o 'text'")
             if method != "scrambling":
                 raise ValueError("method (Formateo) inválido")
             # Construir bits desde Formateo con parámetros avanzados
@@ -603,10 +629,10 @@ def create_app() -> Flask:
             def _run_one(label: str, src: str, method_use: str, out_dir_use: Path):
                 bits_local = _build_bits_from_lab1(
                     audio, text, fs, n_bits, quantizer, src, method_use,
-                    mu=l1_mu, lfsr_seed=l1_seed, lfsr_taps=l1_taps, lfsr_bitwidth=l1_bitwidth
+                    lfsr_seed=l1_seed, lfsr_taps=l1_taps, lfsr_bitwidth=l1_bitwidth
                 )
                 if len(bits_local) == 0:
-                    raise ValueError(f"La secuencia de bits ({tag}) está vacía")
+                    raise ValueError(f"La secuencia de bits ({label}) está vacía")
 
                 out_dir_use.mkdir(parents=True, exist_ok=True)
                 bf = out_dir_use / "bits_from_lab1.bin"
@@ -615,7 +641,7 @@ def create_app() -> Flask:
                 _safe_alias(bf, bf_alias)
 
                 try:
-                    plot_hist_bits(bits_local, f"Bits (Formateo→Modulación) [{tag}]", str(out_dir_use / "l1_bits_hist.png"), as_probability=True)
+                    plot_hist_bits(bits_local, f"Bits (Formateo→Modulación) [{label}]", str(out_dir_use / "l1_bits_hist.png"), as_probability=True)
                 except Exception:
                     pass
 
@@ -627,7 +653,7 @@ def create_app() -> Flask:
                 }
 
                 import hashlib
-                if src in {"audio", "concat"}:
+                if src == "audio":
                     try:
                         h = hashlib.md5()
                         with open(audio, 'rb') as _f:
@@ -642,7 +668,7 @@ def create_app() -> Flask:
                         }
                     except Exception as _e:
                         audit["audio_error"] = str(_e)
-                if src in {"text", "concat"}:
+                if src == "text":
                     try:
                         h = hashlib.md5()
                         b = open(text, 'rb').read()
@@ -655,7 +681,7 @@ def create_app() -> Flask:
                 _write_json(out_dir_use / "params.json", {
                     "lab2": {"modulation": mod, "sps": sps, "rolloff": alpha, "span": span, "seed": seed},
                     "lab1": {"audio": audio, "text": text, "fs": fs, "n_bits": n_bits, "quantizer": quantizer,
-                             "source": src, "method": method_use, "mu": l1_mu, "lfsr_seed": l1_seed,
+                             "source": src, "method": method_use, "lfsr_seed": l1_seed,
                              "lfsr_taps": list(l1_taps), "lfsr_bitwidth": l1_bitwidth},
                     "n_bits_effective": len(bits_local),
                     "out": str(out_dir_use),
@@ -666,6 +692,15 @@ def create_app() -> Flask:
                     out_dir=str(out_dir_use), n_bits=len(bits_local), modulation=mod, sps=sps, rolloff=alpha, span=span, seed=seed
                 )
                 paths = lab2_rrc.run_lab2(params, bits=_np.array(bits_local, dtype=_np.uint8))
+                _write_json(out_dir_use / "params.json", {
+                    "lab2": {"modulation": mod, "sps": sps, "rolloff": alpha, "span": span, "seed": seed},
+                    "lab1": {"audio": audio, "text": text, "fs": fs, "n_bits": n_bits, "quantizer": quantizer,
+                             "source": src, "method": method_use, "lfsr_seed": l1_seed,
+                             "lfsr_taps": list(l1_taps), "lfsr_bitwidth": l1_bitwidth},
+                    "n_bits_effective": len(bits_local),
+                    "out": str(out_dir_use),
+                    "l1_metrics": audit["bits"],
+                })
                 gen = {}
                 for k, v in paths.items():
                     p = Path(v)
@@ -686,31 +721,11 @@ def create_app() -> Flask:
                         gen["l1_bits_hist"] = str(l1_hist.relative_to(ROOT))
                     except Exception:
                         gen["l1_bits_hist"] = str(l1_hist)
-                audit["params"] = {"mu": l1_mu, "lfsr_seed": l1_seed, "lfsr_taps": list(l1_taps), "lfsr_bitwidth": l1_bitwidth,
+                audit["params"] = {"lfsr_seed": l1_seed, "lfsr_taps": list(l1_taps), "lfsr_bitwidth": l1_bitwidth,
                                     "fs": fs, "n_bits": n_bits, "quantizer": quantizer, "source": src, "method": method_use}
                 return {"paths": gen, "audit": audit, "n_bits": len(bits_local), "out": str(out_dir_use), "label": label}
 
-            source_label = "Audio" if source == "audio" else ("Texto" if source == "text" else "Concat")
-            if source == "separate":
-                runs = {}
-                for src in ["audio", "text"]:
-                    src_label = "Audio" if src == "audio" else "Texto"
-                    key = src
-                    label = src_label
-                    out_dir_use = base_abs / src
-                    runs[key] = _run_one(label, src, method, out_dir_use)
-                _write_json(base_abs / "params.json", {
-                    "mode": "separate",
-                    "lab2": {"modulation": mod, "sps": sps, "rolloff": alpha, "span": span, "seed": seed},
-                    "lab1": {"audio": audio, "text": text, "fs": fs, "n_bits": n_bits, "quantizer": quantizer,
-                             "source": source, "method": method, "mu": l1_mu, "lfsr_seed": l1_seed,
-                             "lfsr_taps": list(l1_taps), "lfsr_bitwidth": l1_bitwidth},
-                    "out": str(base_abs),
-                    "runs": {k: v["out"] for k, v in runs.items()},
-                })
-                return jsonify({"ok": True, "out": str(base_abs), "mode": "separate", "runs": runs, "formateo": formateo_payload})
-
-            # Modo normal (una sola fuente o concat)
+            source_label = "Audio" if source == "audio" else "Texto"
             result = _run_one(source_label, source, method, base_abs)
             return jsonify({"ok": True, "out": str(base_abs), "paths": result["paths"], "n_bits": result["n_bits"], "audit": result["audit"], "formateo": formateo_payload})
         except Exception as e:
@@ -720,13 +735,13 @@ def create_app() -> Flask:
     @app.post("/api/lab1/run")
     def api_lab1_run():
         data = request.get_json(force=True) or {}
+        source = (data.get("source") or "audio").lower()
         audio = data.get("audio") or DEFAULTS["audio"]
         text = data.get("text") or DEFAULTS["text"]
         base_out = data.get("out") or DEFAULTS["out_lab1"]
         fs = int(data.get("fs") or 16000)
         n_bits = int(data.get("n_bits") or 8)
-        quantizer = data.get("quantizer") or "mulaw"
-        mu = _parse_int_auto(data.get("mu"), 255)
+        quantizer = data.get("quantizer") or "alaw"
         lfsr_seed = _parse_int_auto(data.get("lfsr_seed"), int("0b1010110011", 2))
         lfsr_taps_str = (data.get("lfsr_taps") or "9,6").strip()
         try:
@@ -737,22 +752,19 @@ def create_app() -> Flask:
         hist_bins = _parse_int_auto(data.get("hist_bins"), 50)
         entropy_step_a = _parse_int_auto(data.get("entropy_step_a"), 10000)
         entropy_step_b = _parse_int_auto(data.get("entropy_step_b"), 500)
-        sqnr_mus_str = (data.get("sqnr_mus") or "1,25,50,100,255").strip()
-        try:
-            sqnr_mus = [int(v.strip()) for v in sqnr_mus_str.split(",") if v.strip() != ""]
-        except Exception:
-            sqnr_mus = [1, 25, 50, 100, 255]
         out_dir = str(_ts_dir(Path(base_out)))
         try:
-            _validate_lab1_inputs(audio, text, out_dir, fs, n_bits, quantizer,
-                                  mu, lfsr_seed, lfsr_bitwidth, hist_bins, entropy_step_a, entropy_step_b, lfsr_taps, sqnr_mus)
+            _validate_lab1_inputs(audio, text, out_dir, fs, n_bits, quantizer, source,
+                                  lfsr_seed, lfsr_bitwidth, hist_bins, entropy_step_a, entropy_step_b, lfsr_taps)
             figdir = lab1.ensure_dirs(out_dir)
             rows = []
-            rows.extend(lab1.process_audio(audio, figdir, fs_target=fs, n_bits=n_bits, quantizer=quantizer,
-                                           mu_val=mu, lfsr_seed=lfsr_seed, lfsr_taps=lfsr_taps, lfsr_bitwidth=lfsr_bitwidth,
-                                           hist_bins=hist_bins, entropy_step=entropy_step_a))
-            rows.extend(lab1.process_text(text, figdir, lfsr_seed=lfsr_seed, lfsr_taps=lfsr_taps,
-                                          lfsr_bitwidth=lfsr_bitwidth, entropy_step=entropy_step_b))
+            if source == "audio":
+                rows.extend(lab1.process_audio(audio, figdir, fs_target=fs, n_bits=n_bits, quantizer=quantizer,
+                                               lfsr_seed=lfsr_seed, lfsr_taps=lfsr_taps, lfsr_bitwidth=lfsr_bitwidth,
+                                               hist_bins=hist_bins, entropy_step=entropy_step_a))
+            else:
+                rows.extend(lab1.process_text(text, figdir, lfsr_seed=lfsr_seed, lfsr_taps=lfsr_taps,
+                                              lfsr_bitwidth=lfsr_bitwidth, entropy_step=entropy_step_b))
             lab1_report.save_metrics_csv(out_dir, rows)
             lab1_report.write_markdown(out_dir)
             try:
@@ -761,19 +773,18 @@ def create_app() -> Flask:
             except Exception as _e:
                 pass
             _write_json(Path(out_dir) / "params.json", {
+                "source": source,
                 "audio": audio,
                 "text": text,
                 "fs": fs,
                 "n_bits": n_bits,
                 "quantizer": quantizer,
-                "mu": mu,
                 "lfsr_seed": lfsr_seed,
                 "lfsr_taps": list(lfsr_taps),
                 "lfsr_bitwidth": lfsr_bitwidth,
                 "hist_bins": hist_bins,
                 "entropy_step_a": entropy_step_a,
                 "entropy_step_b": entropy_step_b,
-                "sqnr_mus": sqnr_mus,
                 "out": out_dir,
             })
             # Listar archivos
@@ -796,15 +807,34 @@ def create_app() -> Flask:
     def _write_lab3_status(out_dir: str, job_id: str, state: str, progress: float, message: str) -> None:
         try:
             p = Path(out_dir) / "status.json"
+            existing = {}
+            if p.exists():
+                try:
+                    with open(p, "r", encoding="utf-8") as f:
+                        existing = json.load(f)
+                except Exception:
+                    existing = {}
             _write_json(p, {
                 "job_id": job_id,
                 "state": state,
                 "progress": progress,
                 "message": message,
                 "out_dir": out_dir,
+                "cancel_requested": bool(existing.get("cancel_requested", False)),
             })
         except Exception:
             pass
+
+    def _lab3_cancel_requested(out_dir: str) -> bool:
+        try:
+            p = Path(out_dir) / "status.json"
+            if not p.exists():
+                return False
+            with open(p, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return bool(data.get("cancel_requested", False))
+        except Exception:
+            return False
 
 
     def _run_lab3_pipeline(
@@ -819,9 +849,12 @@ def create_app() -> Flask:
         trials: int,
         sps: int,
         seed: int,
+        channel_mode: str,
         progress_cb=None,
+        cancel_cb=None,
+        prepared_out_dir: Optional[str] = None,
     ) -> str:
-        out_dir = str(_ts_dir(Path(base_out)))
+        out_dir = prepared_out_dir or str(_ts_dir(Path(base_out)))
         use_l2_chain = True
         if trials <= 0:
             raise ValueError("trials_per_ebn0 debe ser > 0")
@@ -831,7 +864,11 @@ def create_app() -> Flask:
         if not l2:
             raise ValueError("No hay salida de Modulación disponible. Ejecutá Modulación primero.")
         l2_base = Path(l2)
-        runs = _collect_lab2_runs(l2_base)
+        is_direct_run = ((((l2_base / "iq.bin").exists()) or ((l2_base / "iq_tx.bin").exists())) and (l2_base / "params.json").exists())
+        if is_direct_run:
+            runs = [(".", l2_base)]
+        else:
+            runs = _collect_lab2_runs(l2_base)
         if not runs:
             raise ValueError("No se encontraron corridas válidas en Modulación.")
         multi = len(runs) > 1 or (runs and runs[0][0] != ".")
@@ -840,6 +877,8 @@ def create_app() -> Flask:
             runs_meta = []
             total = len(runs)
             for i, (rel, rdir) in enumerate(runs, 1):
+                if cancel_cb and cancel_cb():
+                    raise InterruptedError("Cancelado por el usuario")
                 if progress_cb:
                     progress_cb(i - 1, total, rel)
                 out_sub = Path(out_dir) / rel
@@ -852,6 +891,8 @@ def create_app() -> Flask:
                     ebn0_step=eb_step,
                     trials_per_ebn0=trials,
                     seed=seed,
+                    channel_mode=channel_mode,
+                    cancel_cb=cancel_cb,
                 )
                 try:
                     lab3_report.write_markdown(str(out_sub))
@@ -887,6 +928,7 @@ def create_app() -> Flask:
                 "trials_per_ebn0": trials,
                 "sps": sps,
                 "seed": seed,
+                "channel_mode": channel_mode,
                 "out": out_dir,
                 "runs": [r[0] for r in runs]
             })
@@ -896,6 +938,8 @@ def create_app() -> Flask:
 
         # Single run
         rdir = runs[0][1]
+        if cancel_cb and cancel_cb():
+            raise InterruptedError("Cancelado por el usuario")
         _ = lab3_demod.run_simulation_from_file(
             lab2_dir=str(rdir),
             out_dir=out_dir,
@@ -904,6 +948,8 @@ def create_app() -> Flask:
             ebn0_step=eb_step,
             trials_per_ebn0=trials,
             seed=seed,
+            channel_mode=channel_mode,
+            cancel_cb=cancel_cb,
         )
 
         _write_json(Path(out_dir) / "params.json", {
@@ -917,6 +963,7 @@ def create_app() -> Flask:
             "trials_per_ebn0": trials,
             "sps": sps,
             "seed": seed,
+            "channel_mode": channel_mode,
             "out": out_dir
         })
         try:
@@ -940,14 +987,15 @@ def create_app() -> Flask:
         base_out = request.values.get("out") or DEFAULTS["out_lab3"]
         lab2_path = (request.values.get("lab2_path") or "").strip()
         subrun = (request.values.get("subrun") or "").strip()
-        mod = request.values.get("modulation") or "QPSK"
-        n_bits = int(request.values.get("n_bits") or 10000)
+        mod = "QPSK"
+        n_bits = 10000
         eb_start = float(request.values.get("eb_start") or 0.0)
         eb_end = float(request.values.get("eb_end") or 12.0)
         eb_step = float(request.values.get("eb_step") or 2.0)
         trials = int(request.values.get("trials_per_ebn0") or 20)
-        sps = int(request.values.get("sps") or 8)
-        seed = int(request.values.get("seed") or 42)
+        sps = 8
+        seed = 42
+        channel_mode = (request.values.get("channel_mode") or "awgn").strip().lower()
 
         try:
             out_dir = _run_lab3_pipeline(
@@ -962,6 +1010,7 @@ def create_app() -> Flask:
                 trials=trials,
                 sps=sps,
                 seed=seed,
+                channel_mode=channel_mode,
             )
         except Exception as e:
             flash(f"Error al ejecutar Canal y Rx: {e}", "error")
@@ -975,14 +1024,15 @@ def create_app() -> Flask:
         base_out = data.get("out") or DEFAULTS["out_lab3"]
         lab2_path = (data.get("lab2_path") or "").strip()
         subrun = (data.get("subrun") or "").strip()
-        mod = data.get("modulation") or "QPSK"
-        n_bits = int(data.get("n_bits") or 10000)
+        mod = "QPSK"
+        n_bits = 10000
         eb_start = float(data.get("eb_start") or 0.0)
         eb_end = float(data.get("eb_end") or 12.0)
         eb_step = float(data.get("eb_step") or 2.0)
         trials = int(data.get("trials_per_ebn0") or 20)
-        sps = int(data.get("sps") or 8)
-        seed = int(data.get("seed") or 42)
+        sps = 8
+        seed = 42
+        channel_mode = (data.get("channel_mode") or "awgn").strip().lower()
 
         job_id = uuid.uuid4().hex
         out_dir = str(_ts_dir(Path(base_out)))
@@ -991,6 +1041,8 @@ def create_app() -> Flask:
         def _worker():
             try:
                 def _progress(done, total, label):
+                    if _lab3_cancel_requested(out_dir):
+                        raise InterruptedError("Cancelado por el usuario")
                     if total <= 0:
                         return
                     prog = max(0.0, min(1.0, float(done) / float(total)))
@@ -1012,9 +1064,14 @@ def create_app() -> Flask:
                     trials=trials,
                     sps=sps,
                     seed=seed,
+                    channel_mode=channel_mode,
                     progress_cb=_progress,
+                    cancel_cb=lambda: _lab3_cancel_requested(out_dir),
+                    prepared_out_dir=out_dir,
                 )
                 _write_lab3_status(out_dir, job_id, "done", 1.0, "Completado")
+            except InterruptedError:
+                _write_lab3_status(out_dir, job_id, "canceled", 0.0, "Cancelado por el usuario")
             except Exception as e:
                 _write_lab3_status(out_dir, job_id, "error", 0.0, str(e))
 
@@ -1051,10 +1108,63 @@ def create_app() -> Flask:
         data["log_tail"] = log_tail
         return jsonify({"ok": True, "status": data})
 
+    @app.post("/api/lab3/cancel")
+    def api_lab3_cancel():
+        out_dir = (request.get_json(force=True) or {}).get("out", "")
+        out_dir = str(out_dir).strip()
+        if not out_dir:
+            return jsonify({"ok": False, "error": "out requerido"}), 400
+        p = Path(out_dir) / "status.json"
+        if not p.exists():
+            return jsonify({"ok": False, "error": "status no encontrado"}), 404
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
+        data["cancel_requested"] = True
+        if data.get("state") == "running":
+            data["message"] = "Cancelación solicitada…"
+        _write_json(p, data)
+        return jsonify({"ok": True})
+
     @app.get("/lab3/results")
     def lab3_results():
         out_dir = request.args.get("out") or DEFAULTS["out_lab3"]
         p = Path(out_dir)
+        summary = {}
+        rx_figs = []
+        text_rx_preview = None
+        text_tx_preview = None
+        recovery_ebn0_db = None
+
+        params_file = p / "params.json"
+        if params_file.exists():
+            try:
+                with open(params_file, "r", encoding="utf-8") as f:
+                    summary = json.load(f)
+            except Exception:
+                summary = {}
+
+        if summary.get("diag_ebn0_db") is not None:
+            recovery_ebn0_db = summary.get("diag_ebn0_db")
+        elif summary.get("eb_start") is not None:
+            recovery_ebn0_db = summary.get("eb_start")
+
+        for name in [
+            "tx_rx_constellations.png",
+            "rx_time.png",
+            "rx_constellation.png",
+            "rx_eye.png",
+            "mf_impulse.png",
+            "mf_freq.png",
+            "rx_decision.png",
+            "ber_point.png",
+            "audio_compare_rx.png",
+        ]:
+            fp = p / name
+            if fp.exists():
+                rx_figs.append(name)
 
         runs = None
         runs_file = p / "runs.json"
@@ -1071,11 +1181,47 @@ def create_app() -> Flask:
         ber_csv = "ber_results.csv" if (p / "ber_results.csv").exists() else None
         
         other = []
-        for name in ["params.json", "run_log.txt", "informe_lab3.md", "informe_lab3.pdf", "runs.json"]:
+        for name in [
+            "params.json",
+            "run_log.txt",
+            "informe_lab3.md",
+            "informe_lab3.pdf",
+            "runs.json",
+            "audio_rx.wav",
+            "audio_tx_ref.wav",
+            "text_rx.txt",
+            "text_tx_ref.txt",
+        ]:
             if (p / name).exists():
                 other.append(name)
+
+        rx_txt = p / "text_rx.txt"
+        if rx_txt.exists():
+            try:
+                text_rx_preview = rx_txt.read_text(encoding="utf-8")[:4000]
+            except Exception:
+                text_rx_preview = None
+
+        tx_txt = p / "text_tx_ref.txt"
+        if tx_txt.exists():
+            try:
+                text_tx_preview = tx_txt.read_text(encoding="utf-8")[:4000]
+            except Exception:
+                text_tx_preview = None
                 
-        return render_template("lab3_results.html", out=out_dir, ber_plot=ber_plot, ber_csv=ber_csv, other=other, runs=runs)
+        return render_template(
+            "lab3_results.html",
+            out=out_dir,
+            ber_plot=ber_plot,
+            ber_csv=ber_csv,
+            other=other,
+            runs=runs,
+            summary=summary,
+            rx_figs=rx_figs,
+            text_rx_preview=text_rx_preview,
+            text_tx_preview=text_tx_preview,
+            recovery_ebn0_db=recovery_ebn0_db,
+        )
 
 
 
@@ -1089,11 +1235,12 @@ def create_app() -> Flask:
             try:
                 l2_path = data["lab2_path"]
                 ebn0 = float(data.get("ebn0", 10.0))
+                channel_mode = (data.get("channel_mode") or "awgn").strip().lower()
                 # Output dir
                 out_base = data.get("out") or DEFAULTS["out_lab3"]
                 out_ts = _ts_dir(Path(out_base))
                 
-                res = lab3_demod.run_from_file(l2_path, ebn0, str(out_ts))
+                res = lab3_demod.run_from_file(l2_path, ebn0, str(out_ts), channel_mode=channel_mode)
                 # Add relative paths for UI
                 gen = {}
                 for k, v in res["paths"].items():
@@ -1119,6 +1266,7 @@ def create_app() -> Flask:
         span = int(data.get("span") or 8)
         seed = int(data.get("seed") or 42)
         ebn0 = float(data.get("ebn0") or 10.0)
+        channel_mode = (data.get("channel_mode") or "awgn").strip().lower()
         
         # Lab1 bits integration
         l1 = data.get("lab1") or {}
@@ -1131,10 +1279,9 @@ def create_app() -> Flask:
                 text = l1.get("text") or DEFAULTS["text"]
                 fs = int(l1.get("fs") or 16000)
                 n_bits_l1 = int(l1.get("n_bits") or 8) # n_bits of quantization
-                quantizer = (l1.get("quantizer") or "mulaw").lower()
+                quantizer = (l1.get("quantizer") or "alaw").lower()
                 source = (l1.get("source") or "audio").lower()
                 method = (l1.get("method") or "scrambling").lower()
-                l1_mu = _parse_int_auto(l1.get("mu"), 255)
                 l1_seed = _parse_int_auto(l1.get("lfsr_seed"), int("0b1010110011", 2))
                 taps_str = (str(l1.get("lfsr_taps")) if l1.get("lfsr_taps") is not None else "9,6").strip()
                 try:
@@ -1146,13 +1293,13 @@ def create_app() -> Flask:
                 
                 # Build bits
                 bits = _build_bits_from_lab1(audio, text, fs, n_bits_l1, quantizer, source, method,
-                                             mu=l1_mu, lfsr_seed=l1_seed, lfsr_taps=l1_taps, lfsr_bitwidth=l1_bitwidth)
+                                             lfsr_seed=l1_seed, lfsr_taps=l1_taps, lfsr_bitwidth=l1_bitwidth)
                 
                 if bits:
                     l1_audit = {
                         "source": source, "method": method, "count": len(bits),
-                        "audio": audio if source in ["audio","concat"] else None,
-                        "text": text if source in ["text","concat"] else None
+                        "audio": audio if source == "audio" else None,
+                        "text": text if source == "text" else None
                     }
             except Exception as e:
                  return jsonify({"ok": False, "error": f"Formateo integration error: {e}"}), 400
@@ -1169,13 +1316,14 @@ def create_app() -> Flask:
                 rolloff=alpha,
                 span=span,
                 ebn0_start=ebn0, # Use start as THE value for single run
-                seed=seed
+                seed=seed,
+                channel_mode=channel_mode,
             )
             
             import numpy as _np
             bits_arr = _np.array(bits, dtype=_np.uint8) if bits else None
             
-            res = lab3_demod.run_single(params, bits=bits_arr)
+            res = lab3_demod.run_single(params, bits=bits_arr, lab1_meta=l1 if l1 else None)
             
             # Paths relative
             gen = {}
@@ -1203,7 +1351,7 @@ def create_app() -> Flask:
         mod = (data.get("modulation") or "QPSK").upper()
         n_bits = int(data.get("n_bits") or 2000)
         sps = int(data.get("sps") or 8)
-        alpha = float(data.get("rolloff") or 0.25)
+        alpha = float(data.get("alpha") or data.get("rolloff") or 0.25)
         span = int(data.get("span") or 8)
         seed = int(data.get("seed") or 0)
         try:
@@ -1245,6 +1393,86 @@ def create_app() -> Flask:
             else:
                 subprocess.Popen(["xdg-open", str(p)])
             return jsonify({"ok": True})
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
+
+    @app.post("/api/pick_file")
+    def api_pick_file():
+        data = request.get_json(silent=True) or {}
+        current_path = (data.get("path") or "").strip()
+        kind = (data.get("kind") or "any").strip().lower()
+
+        start_dir = Path(current_path).expanduser() if current_path else ROOT
+        if start_dir.is_file():
+            start_dir = start_dir.parent
+        if not start_dir.exists():
+            start_dir = ROOT
+
+        try:
+            if sys.platform.startswith("darwin"):
+                type_clause = ""
+                if kind == "audio":
+                    type_clause = ' of type {"wav","wave"}'
+                elif kind == "text":
+                    type_clause = ' of type {"txt","md","text"}'
+                start_posix = str(start_dir.resolve()).replace("\\", "\\\\").replace('"', '\\"')
+                script = (
+                    f'set chosenFile to choose file with prompt "Seleccionar archivo"{type_clause} '
+                    f'default location POSIX file "{start_posix}/"\n'
+                    'POSIX path of chosenFile'
+                )
+                res = subprocess.run(
+                    ["osascript", "-e", script],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if res.returncode != 0:
+                    err = (res.stderr or res.stdout or "").strip()
+                    if "User canceled" in err or "cancel" in err.lower():
+                        return jsonify({"ok": False, "canceled": True})
+                    return jsonify({"ok": False, "error": err or "No se pudo seleccionar archivo"}), 500
+                picked = (res.stdout or "").strip()
+                return jsonify({"ok": True, "path": picked})
+
+            return jsonify({"ok": False, "error": "Selector nativo no soportado en esta plataforma"}), 501
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
+
+    @app.post("/api/pick_folder")
+    def api_pick_folder():
+        data = request.get_json(silent=True) or {}
+        current_path = (data.get("path") or "").strip()
+
+        start_dir = Path(current_path).expanduser() if current_path else ROOT
+        if start_dir.is_file():
+            start_dir = start_dir.parent
+        if not start_dir.exists():
+            start_dir = ROOT
+
+        try:
+            if sys.platform.startswith("darwin"):
+                start_posix = str(start_dir.resolve()).replace("\\", "\\\\").replace('"', '\\"')
+                script = (
+                    f'set chosenFolder to choose folder with prompt "Seleccionar carpeta" '
+                    f'default location POSIX file "{start_posix}/"\n'
+                    'POSIX path of chosenFolder'
+                )
+                res = subprocess.run(
+                    ["osascript", "-e", script],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if res.returncode != 0:
+                    err = (res.stderr or res.stdout or "").strip()
+                    if "User canceled" in err or "cancel" in err.lower():
+                        return jsonify({"ok": False, "canceled": True})
+                    return jsonify({"ok": False, "error": err or "No se pudo seleccionar carpeta"}), 500
+                picked = (res.stdout or "").strip()
+                return jsonify({"ok": True, "path": picked})
+
+            return jsonify({"ok": False, "error": "Selector nativo no soportado en esta plataforma"}), 501
         except Exception as e:
             return jsonify({"ok": False, "error": str(e)}), 500
 

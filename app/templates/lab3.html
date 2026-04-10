@@ -28,8 +28,8 @@
   }
 </style>
 
-<div style="display: flex; justify-content: space-between; align-items: center;">
-  <h2>Etapa de Canal y Rx: Demodulación Digital</h2>
+<div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+  <h2 style="margin:0;">Etapa de Canal y Rx: Demodulación Digital</h2>
   <a href="{{ url_for('index') }}" class="btn secondary">Ir al Inicio</a>
 </div>
 
@@ -40,34 +40,19 @@
     <div class="hint" style="margin-bottom: 14px; padding: 12px 14px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; line-height:1.5;">
       <div style="font-weight:700; color:#0f172a; margin-bottom:6px;">Qué hace este bloque</div>
       <div class="muted" style="margin-bottom:10px;">Ejecuta la etapa completa <strong>Modulación → Canal AWGN → Rx</strong> usando la salida real de Modulación y calcula la <strong>BER</strong>.</div>
-      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:10px;">
-        <div style="background:#ffffff; border:1px solid #e5e7eb; border-radius:8px; padding:10px;">
-          <div style="font-weight:700; color:#1e3a8a; margin-bottom:4px;">Modo 1: Curva BER</div>
-          <div class="muted">Definí un rango con <code>Eb/N0 mínimo</code>, <code>Eb/N0 máximo</code> y <code>Δ Eb/N0</code>. El sistema barre varios puntos y compara <strong>BER simulada</strong> vs <strong>BER teórica</strong>.</div>
-        </div>
-        <div style="background:#ffffff; border:1px solid #e5e7eb; border-radius:8px; padding:10px;">
-          <div style="font-weight:700; color:#1e3a8a; margin-bottom:4px;">Modo 2: Punto de operación</div>
-          <div class="muted">Fijá <code>Eb/N0 mínimo = Eb/N0 máximo</code>. Así se calcula un único valor de <code>P_b = BER</code> para ese <code>Eb/N0</code>.</div>
-        </div>
-      </div>
+      <div class="muted">Si querés una <strong>curva BER</strong>, definí un rango de <code>Eb/N0</code>. Si querés un <strong>punto único</strong>, poné <code>Eb/N0 mínimo = Eb/N0 máximo</code>.</div>
     </div>
 
     <form id="ber-form" action="/lab3/run" method="post">
       <div class="row">
         <div class="field">
-          <label style="display:flex; align-items:center; gap:8px;">
-            <input id="ber_use_l2_chain" name="use_l2_chain_ui" type="checkbox" checked disabled>
-            Usar cadena completa Modulación → Canal y Rx (obligatorio)
-          </label>
-          <small class="muted">Al activar esta opción, la curva usa <code>iq.bin</code>/<code>iq_tx.bin</code> + bits de una corrida real de Modulación.</small>
-          <input type="hidden" name="use_l2_chain" value="on">
-        </div>
-        <div class="field">
           <label>Ruta salida Modulación (opcional)</label>
           <input id="ber_lab2_path" name="lab2_path" placeholder="Ej: outputs_ui/lab2/2026...">
-          <small class="muted">Si la ruta contiene subcarpetas (audio/texto y métodos), se procesan todas automáticamente.</small>
+          <small class="muted">Se usa la salida real de Modulación. Si lo dejás vacío, se intenta usar la última corrida disponible.</small>
           <div style="margin-top:8px; display:flex; gap:8px; flex-wrap: wrap;">
             <button type="button" class="btn secondary" onclick="fillBerLab2Path()">Usar última corrida completa de Modulación</button>
+            <button type="button" class="btn secondary" onclick="pickLab2Folder()">Elegir carpeta...</button>
+            <button type="button" class="btn secondary" onclick="openLab2Folder()">Abrir carpeta</button>
             <button type="button" class="btn secondary" onclick="refreshBerSubruns()">Actualizar lista</button>
           </div>
           <div style="margin-top:8px;">
@@ -75,24 +60,18 @@
             <select id="ber_subrun_select" name="subrun" style="margin-top:4px; width:100%;">
               <option value="">(Sin selección: usar carpeta base)</option>
             </select>
+            <small class="muted">Si existen subcorridas, se selecciona automáticamente la más reciente para heredar todos los parámetros reales.</small>
           </div>
         </div>
       </div>
       <div class="row">
         <div class="field">
-          <label>Modulación <span class="badge">heredada de Modulación</span></label>
-          <input id="ber_modulation_info" type="text" value="Heredada de Lab 2" disabled style="background:#f8fafc; color:#64748b;">
-          <input id="ber_modulation_hidden" name="modulation" type="hidden" value="QPSK">
-          <small class="muted">Canal y Rx demodula la señal IQ real generada en la etapa de Modulación. El esquema efectivo (BPSK/QPSK) se toma de esa corrida.</small>
+          <label>Canal</label>
+          <select name="channel_mode">
+            <option value="awgn" selected>AWGN</option>
+            <option value="ideal">Ideal (sin ruido)</option>
+          </select>
         </div>
-        <div class="field">
-          <label>Bits Totales <span class="badge">heredados</span></label>
-          <input id="ber_nbits_info" type="text" value="Se usan los bits reales de la salida de Modulación" disabled style="background:#f8fafc; color:#64748b;">
-          <input id="ber_nbits_hidden" name="n_bits" type="hidden" value="50000">
-          <small class="muted">Este bloque no genera bits nuevos: usa el flujo binario real asociado a <code>iq.bin</code>/<code>iq_tx.bin</code>. Por eso aquí no se configura manualmente la longitud.</small>
-        </div>
-      </div>
-      <div class="row">
         <div class="field">
           <label>Eb/N0 mínimo (inicio de barrido)</label>
           <input name="eb_start" type="number" value="0">
@@ -108,33 +87,14 @@
         <div class="field">
           <label>Muestras Monte Carlo por Eb/N0</label>
           <input id="ber_trials" name="trials_per_ebn0" type="number" min="1" value="20">
-          <small class="muted">Recomendado: 20 a 50 para estabilizar la curva BER. A mayor número de realizaciones Monte Carlo, menor dispersión estadística y menor IC 95%, especialmente a alto <code>Eb/N0</code> donde los errores son eventos raros.</small>
+          <small class="muted">Recomendado: 20 a 50. Más realizaciones dan una estimación BER más estable, pero tardan más.</small>
         </div>
       </div>
-      <div style="display:flex; gap:10px; margin-top: 8px;">
-        <button type="button" class="btn secondary" onclick="setTrialsPreset(20)">Rápido (20)</button>
-        <button type="button" class="btn secondary" onclick="setTrialsPreset(50)">Robusto (50)</button>
-      </div>
-
-      <div class="row">
-        <div class="field">
-          <label>SPS <span class="badge">fijo en Canal y Rx</span></label>
-          <input type="text" value="8 muestras/símbolo (alineado con la corrida de Modulación)" disabled style="background:#f8fafc; color:#64748b;">
-          <small class="muted">Este valor se mantiene fijo para que el filtro acoplado y el muestreo óptimo usen la misma grilla temporal que la señal transmitida.</small>
-        </div>
-        <div class="field">
-          <label>Seed <span class="badge">reproducible</span></label>
-          <input type="text" value="42 (semilla fija para AWGN y Monte Carlo reproducible)" disabled style="background:#f8fafc; color:#64748b;">
-          <small class="muted">La semilla fija permite repetir la simulación y obtener resultados comparables entre corridas y entre máquinas.</small>
-        </div>
-      </div>
-
-      <input type="hidden" name="sps" value="8">
-      <input type="hidden" name="seed" value="42">
       <input type="hidden" name="out" value="{{ defaults.out_lab3 }}">
 
       <div style="margin-top: 16px;">
-        <button type="submit" class="btn" style="background: #10b981;">Generar Curva</button>
+        <button type="submit" class="btn">Ejecutar Canal y Recepción</button>
+        <button id="ber-cancel-btn" type="button" class="btn secondary" style="margin-left:8px; display:none;" onclick="cancelBerRun()">Cancelar</button>
       </div>
           <div id="ber-progress" style="margin-top:10px; display:none;">
         <div id="ber-progress-text" class="muted">Iniciando…</div>
@@ -147,210 +107,70 @@
   </div>
 </div>
 
-<details class="param-guide" style="margin-top: 16px;">
-  <summary>Guía de parámetros (Canal y Rx)</summary>
-  <div class="hint">Referencia rápida de qué controla cada parámetro del receptor, su fundamento teórico y el efecto esperado al modificarlo.</div>
-  <table>
-    <thead>
-      <tr>
-        <th>Parámetro</th>
-        <th>Qué controla</th>
-        <th>Fundamento teórico</th>
-        <th>Si aumenta</th>
-        <th>Si disminuye</th>
-        <th>Impacto en el resultado</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td><strong>Eb/N0 mínimo</strong></td>
-        <td>Punto de inicio del barrido de la relación energía por bit a densidad espectral de ruido.</td>
-        <td>Eb/N₀ es la figura de mérito universal en comunicaciones digitales (Sklar, s3.1.4). Define la SNR normalizada al nivel del bit, independiente de la modulación y la tasa de símbolo.</td>
-        <td>Inicia el barrido más lejos en la región de alta BER (zona de la cascada), aumentando el rango visible de la curva.</td>
-        <td>Omite la región de mayor pendiente; puede perderse la forma característica en "cascada" de la curva P_b vs Eb/N₀.</td>
-        <td>Define el extremo izquierdo de la curva BER experimental.</td>
-      </tr>
-      <tr>
-        <td><strong>Eb/N0 máximo</strong></td>
-        <td>Punto final del barrido. Define hasta qué SNR se evalúa el sistema.</td>
-        <td>A Eb/N₀ alto, P_b = Q(√(2Eb/N₀)) decae exponencialmente. Los errores se vuelven eventos raros, aumentando la varianza estadística de la estimación Monte Carlo.</td>
-        <td>Mayor rango → más puntos en la región de BER baja; mayor tiempo de cómputo y mayor varianza en la estimación.</td>
-        <td>Menos puntos evaluados; se pierde la región donde la curva ya se ha estabilizado cerca del mínimo.</td>
-        <td>Define el extremo derecho de la curva. El IC 95% se ensancha en esta región si N es pequeño.</td>
-      </tr>
-      <tr>
-        <td><strong>Δ Eb/N0</strong></td>
-        <td>Paso entre puntos consecutivos del barrido de Eb/N₀.</td>
-        <td>La curva P_b vs Eb/N₀ tiene pendiente máxima en la zona de "waterfall". Un paso de 1 dB es suficiente para capturar la forma; pasos mayores pueden perder la región de mayor variación.</td>
-        <td>Paso menor → curva más densa y continua; mayor tiempo de cómputo proporcional al número de puntos.</td>
-        <td>Paso mayor → curva más dispersa; puede perderse la forma característica de la cascada.</td>
-        <td>Afecta solo la resolución visual de la curva BER, no la precisión en cada punto individual.</td>
-      </tr>
-      <tr>
-        <td><strong>Muestras Monte Carlo por Eb/N₀</strong></td>
-        <td>Número de realizaciones independientes (N) para estimar la BER en cada punto de Eb/N₀.</td>
-        <td>La BER estimada es una variable aleatoria con varianza σ²_BER ≈ P_b(1−P_b)/n_bits. El IC 95% es ±1.96·σ_BER/√N. A BER bajas (alto Eb/N₀), los errores son eventos raros y se necesita mayor N para reducir el IC (Sklar, s3.2).</td>
-        <td>Mayor N → IC 95% más estrecho → estimación más precisa, especialmente en la región de alto Eb/N₀. A costa de mayor tiempo de cómputo proporcional a N.</td>
-        <td>Menor N → IC más amplio → mayor incertidumbre en la estimación, especialmente donde P_b es muy baja.</td>
-        <td>N=20 es el mínimo recomendado para visualizar la curva. N=50 da resultados más robustos en la región 8–10 dB donde los errores son raros.</td>
-      </tr>
-      <tr>
-        <td><strong>Ruta salida Modulación</strong></td>
-        <td>Directorio que contiene <code>iq.bin</code> (señal IQ transmitida) e <code>iq_tx.bin</code>/<code>bits_tx.bin</code> (bits transmitidos) del Laboratorio 2.</td>
-        <td>El receptor necesita la señal IQ real para aplicar el canal AWGN y el filtro acoplado, y los bits transmitidos para calcular la BER por comparación directa. Sin esta cadena no es posible calcular P_b experimental.</td>
-        <td>Seleccionar una corrida con más bits → estimación estadística más robusta en cada punto de Eb/N₀.</td>
-        <td>Si la ruta es incorrecta, el sistema no encuentra los archivos y no puede ejecutar la simulación.</td>
-        <td>Debe contener los archivos de la última corrida de Modulación. Usar "Usar última corrida" para autocompletar desde el historial.</td>
-      </tr>
-      <tr>
-        <td><strong>SPS (heredado)</strong></td>
-        <td>Muestras por símbolo. Fijo en 8 para alinearse con la corrida de Modulación.</td>
-        <td>El receptor debe muestrear en los instantes óptimos t = nT, separados exactamente sps muestras entre sí. Si el sps del receptor no coincide con el del transmisor, el muestreo ocurre fuera del instante óptimo y la ISI residual degrada la BER artificialmente.</td>
-        <td>—</td>
-        <td>—</td>
-        <td>No configurable: se hereda de la corrida de Modulación para garantizar coherencia entre transmisor y receptor.</td>
-      </tr>
-      <tr>
-        <td><strong>Seed (reproducibilidad)</strong></td>
-        <td>Semilla fija del generador de números aleatorios para el ruido AWGN y el proceso Monte Carlo.</td>
-        <td>El ruido AWGN se genera con numpy usando esta semilla. Una semilla fija garantiza que la secuencia de ruido sea idéntica en cada ejecución, haciendo los resultados reproducibles entre máquinas y entre corridas (requisito de reproducibilidad científica).</td>
-        <td>—</td>
-        <td>—</td>
-        <td>Seed fija en 42. Los resultados de BER son reproducibles: ejecutar la misma configuración dos veces produce exactamente la misma curva.</td>
-      </tr>
-    </tbody>
-  </table>
-</details>
-
-<details class="doc-guide" style="margin-top: 12px;">
-  <summary>Documentación técnica (Canal y Rx)</summary>
-  <p class="intro">Esta sección describe el pipeline completo del receptor digital: desde la inyección del canal AWGN hasta el cálculo de la curva BER experimental. Cubre todos los entregables requeridos por la guía oficial.</p>
-
-  <div class="doc-grid">
-
-    <div class="doc-card">
-      <h4>1) Canal AWGN: modelo y justificación</h4>
-      <p>El canal AWGN (Additive White Gaussian Noise) es el modelo canónico de referencia en comunicaciones digitales. La señal recibida es:</p>
-      <p><code>r[n] = s[n] + (n_I[n] + j·n_Q[n])</code></p>
-      <p>donde n_I y n_Q son variables aleatorias gaussianas independientes e idénticamente distribuidas (i.i.d.) con media cero y varianza σ² = N₀/2 (Sklar, s3.1.3). La varianza se calcula como:</p>
-      <p><code>σ² = N₀/2 = Eb / (2·Eb/N₀)</code></p>
-      <p>Esta expresión es independiente del número de bits por símbolo k: aunque QPSK transmite k=2 bits por símbolo y por tanto Es=k·Eb, al normalizar por Eb la dependencia en k se cancela. El ruido se inyecta por separado en las componentes I y Q de la señal IQ en banda base.</p>
-    </div>
-
-    <div class="doc-card">
-      <h4>2) Filtro acoplado y par RRC×RRC</h4>
-      <p>El filtro acoplado (Matched Filter, MF) es el filtro lineal que maximiza la SNR en el instante de muestreo óptimo t=T. Su respuesta impulsiva óptima es (Sklar, s3.2.2, Ec. 3.56):</p>
-      <p><code>h(t) = k·s(T−t)</code></p>
-      <p>Es decir, la imagen espejo del pulso transmisor retardada T segundos. Para el filtro RRC (simétrico y real), el filtro acoplado es idéntico al filtro transmisor. La cascada de ambos filtros produce el coseno elevado completo:</p>
-      <p><code>H_RC(f) = H_RRC,Tx(f) · H_RRC,Rx(f) = |H_RRC(f)|²</code></p>
-      <p>El RC satisface el criterio de Nyquist: su respuesta impulsiva se anula en todos los múltiplos enteros de Ts excepto en t=0, garantizando ISI=0 en los instantes de muestreo óptimo.</p>
-      <p>La amplitud del lóbulo principal del filtro acoplado escala como 1/√sps para preservar la energía total del pulso independientemente del sobremuestreo.</p>
-    </div>
-
-    <div class="doc-card">
-      <h4>3) Detección óptima: criterios MAP y ML</h4>
-      <p>El detector MAP (Máximo a Posteriori) elige el símbolo que maximiza la probabilidad a posteriori P(Hᵢ|r):</p>
-      <p><code>ŝ = argmaxᵢ P(Hᵢ|r) = argmaxᵢ p(r|sᵢ)·P(sᵢ)</code></p>
-      <p>Cuando los símbolos son equiprobables — P(sᵢ)=1/M para todo i, condición verificada por H≈1 en la salida del Formateo — el factor a priori es constante y se cancela. El detector MAP se reduce al detector ML (Máxima Verosimilitud):</p>
-      <p><code>ŝ = argmaxᵢ p(r|sᵢ)</code></p>
-      <p>Para canal AWGN, p(r|sᵢ) es una gaussiana N-dimensional centrada en sᵢ. Maximizar la gaussiana equivale a minimizar la distancia euclidiana (Sklar, s4.3.1):</p>
-      <p><code>ŝ = argminᵢ ||r − sᵢ||</code></p>
-      <p>Para BPSK con s₁=+√E y s₂=−√E, el umbral óptimo es γ₀=(a₁+a₂)/2=0 (Sklar, Ec. 3.32). Para QPSK, la decisión se desacopla en dos detectores BPSK independientes sobre las componentes I y Q, cada uno con umbral en 0.</p>
-    </div>
-
-    <div class="doc-card">
-      <h4>4) Probabilidad de error de bit (BER) para BPSK/QPSK</h4>
-      <p>Para BPSK con detector ML en canal AWGN, la BER teórica se obtiene integrando la cola de la gaussiana sobre el lado incorrecto del umbral (Sklar, Ec. 3.40–3.43):</p>
-      <p><code>P_b = Q(√(2Eb/N₀))</code></p>
-      <p>donde Q(x) es la función complementaria del error gaussiano:</p>
-      <p><code>Q(x) = (1/√(2π)) · ∫_x^∞ exp(−u²/2) du</code></p>
-      <p>Esta misma expresión es válida para QPSK: aunque transmite k=2 bits por símbolo, la decisión en cada componente I y Q es equivalente a un detector BPSK independiente con la misma Eb/N₀. La equivalencia BER_BPSK = BER_QPSK aplica cuando se grafica P_b vs Eb/N₀ (energía por bit), no vs Es/N₀ (energía por símbolo).</p>
-      <p>La curva P_b vs Eb/N₀ tiene la característica forma en "cascada" (Sklar, Fig. 3.6): por encima de un umbral x₀, P_b cae abruptamente. El sistema más eficiente es aquel que requiere menor Eb/N₀ para alcanzar una P_b objetivo.</p>
-    </div>
-
-    <div class="doc-card">
-      <h4>5) Simulación Monte Carlo y validación estadística</h4>
-      <p>La curva BER experimental se obtiene por simulación Monte Carlo: para cada valor de Eb/N₀ se realizan N experimentos independientes, cada uno con una secuencia de ruido diferente (semilla fija para reproducibilidad). La BER estimada es:</p>
-      <p><code>P_b_est = (1/N) · Σᵢ BERᵢ</code></p>
-      <p>La BER estimada en cada realización es una variable aleatoria. El intervalo de confianza del 95% es:</p>
-      <p><code>IC 95% = ±1.96 · σ_BER / √N</code></p>
-      <p>donde σ_BER es el desvío estándar de las N estimaciones. A alto Eb/N₀, P_b es muy baja y los errores son eventos raros: con pocos bits por realización, el estimador tiene alta varianza y el IC se ensancha. Por eso se recomienda N≥20 realizaciones y, para la región de alto Eb/N₀, N=50 o más.</p>
-      <p>La coincidencia entre la curva experimental y la teórica Q(√(2Eb/N₀)) valida toda la cadena Tx→Canal→Rx: confirma que el filtro acoplado, el detector ML y la inyección de ruido están correctamente implementados.</p>
-    </div>
-
-    <div class="doc-card">
-      <h4>6) Punto de operación único vs curva completa</h4>
-      <p>El sistema puede usarse en dos modos:</p>
-      <ul>
-        <li><strong>Curva BER completa:</strong> fijar Eb/N₀ mínimo &lt; Eb/N₀ máximo con un paso Δ. Genera la curva P_b(Eb/N₀) barriendo el rango completo. Permite comparar directamente con la curva teórica y observar la forma en "cascada".</li>
-        <li><strong>Punto de operación único:</strong> fijar Eb/N₀ mínimo = Eb/N₀ máximo. Calcula P_b para ese único punto y genera las figuras de diagnóstico (constelación Rx, diagrama de ojo, salida ML/MAP) a ese nivel de SNR. Útil para visualizar el comportamiento del receptor a un Eb/N₀ representativo.</li>
-      </ul>
-      <p>Cuando se hace un barrido completo, las figuras de diagnóstico se generan al Eb/N₀ del punto medio del barrido (mín+máx)/2, como referencia visual representativa.</p>
-    </div>
-
-    <div class="doc-card">
-      <h4>7) Gráficas generadas y cómo interpretarlas</h4>
-      <p><strong>ber_curve.png — Curva BER vs Eb/N₀:</strong> curva experimental (Monte Carlo) superpuesta con la teórica Q(√(2Eb/N₀)) y la banda de confianza IC 95%. La coincidencia valida la implementación. El IC estrecho confirma que N realizaciones es suficiente para ese rango de Eb/N₀.</p>
-      <p><strong>tx_rx_constellations.png — Constelaciones Tx y Rx:</strong> Tx muestra los puntos ideales (2 para BPSK, 4 para QPSK). Rx muestra los mismos puntos dispersados por el ruido AWGN con dispersión gaussiana isotrópica. Mayor Eb/N₀ → clusters más compactos.</p>
-      <p><strong>rx_eye.png — Diagrama de ojo Rx:</strong> tras el filtro acoplado. La apertura en t=1 símbolo confirma ISI≈0 por el par RRC×RRC. La dispersión vertical refleja el ruido AWGN. En BPSK: Eye(Q) plano. En QPSK: Eye(I)=Eye(Q), ambos simétricos.</p>
-      <p><strong>mf_impulse.png y mf_freq.png — Filtro acoplado:</strong> la respuesta impulsiva debe ser idéntica al pulso RRC transmisor (lóbulo central y lóbulos laterales simétricos). La respuesta en frecuencia muestra la banda de paso RRC y los alias espectrales (visibles a frecuencias múltiplo del sps).</p>
-      <p><strong>rx_decision.png — Salida ML/MAP:</strong> muestras I (y Q en QPSK) con el umbral de decisión γ₀=0. Los valores que cruzan el umbral son los errores de bit. La dispersión simétrica alrededor de ±√E confirma el correcto funcionamiento del detector.</p>
-    </div>
-
-    <div class="doc-card">
-      <h4>8) Conexión con la cadena completa del sistema</h4>
-      <p>Canal y Rx es la última etapa de la cadena digital. Recibe como entrada la señal IQ generada en Modulación y devuelve la secuencia de bits recuperados. La trazabilidad completa es:</p>
-      <ul>
-        <li><strong>Formateo:</strong> señal analógica/texto → bits ecualizados con P(0)≈P(1)≈0.5, H≈1.</li>
-        <li><strong>Modulación:</strong> bits → símbolos IQ → filtro RRC → iq.bin (float32, compatible SDR).</li>
-        <li><strong>Canal AWGN:</strong> iq.bin + ruido gaussiano controlado por Eb/N₀ → señal recibida.</li>
-        <li><strong>Filtro acoplado:</strong> señal recibida → convolución con RRC → maximización SNR en t=nTs.</li>
-        <li><strong>Muestreo óptimo:</strong> se toma 1 muestra por símbolo en el instante de máxima apertura del ojo.</li>
-        <li><strong>Detector ML/MAP:</strong> muestras → bits decididos por comparación con umbral γ₀=0.</li>
-        <li><strong>Cálculo BER:</strong> bits decididos vs bits transmitidos → P_b experimental por conteo directo.</li>
-      </ul>
-    </div>
-
-  </div>
-</details>
-
 <script>
-  function setTrialsPreset(n) {
-    const inp = document.getElementById('ber_trials');
-    if (inp) inp.value = String(n);
+  function normalizeOutputBase(path) {
+    if (!path) return path;
+    let p = String(path).replace(/\/+$/, '');
+    const tsRe = /^\d{8}_\d{6}$/;
+    let parts = p.split('/');
+    while (parts.length && tsRe.test(parts[parts.length - 1])) {
+      parts.pop();
+    }
+    const normalized = parts.join('/');
+    return normalized || path;
   }
 
   function fillBerLab2Path() {
     try {
       const l2 = JSON.parse(localStorage.getItem('lab2_params') || '{}');
       const inp = document.getElementById('ber_lab2_path');
-      if (inp && l2 && l2.out) inp.value = l2.out;
+      if (inp && l2 && l2.out) inp.value = normalizeOutputBase(l2.out);
     } catch (e) {}
   }
 
-  function syncInheritedFields() {
+  async function pickLab2Folder() {
+    const inp = document.getElementById('ber_lab2_path');
+    if (!inp) return;
     try {
-      const l2 = JSON.parse(localStorage.getItem('lab2_params') || '{}');
-      const mod = String(l2.modulation || 'QPSK').toUpperCase();
-      const baseBits = l2.n_bits || l2.bits_len || null;
-      const modInfo = document.getElementById('ber_modulation_info');
-      const modHidden = document.getElementById('ber_modulation_hidden');
-      const bitsInfo = document.getElementById('ber_nbits_info');
-      const bitsHidden = document.getElementById('ber_nbits_hidden');
-      if (modInfo) modInfo.value = `${mod} (heredada de la última corrida de Modulación)`;
-      if (modHidden) modHidden.value = mod;
-      if (bitsInfo) {
-        bitsInfo.value = baseBits
-          ? `Se usan los bits reales de Modulación (configuración base observada: ${baseBits} bits)`
-          : 'Se usan los bits reales de la salida de Modulación';
+      const res = await fetch('/api/pick_folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: inp.value })
+      });
+      const j = await res.json();
+      if (j.ok && j.path) {
+        inp.value = j.path;
+        await refreshBerSubruns();
+        return;
       }
-      if (bitsHidden) bitsHidden.value = String(baseBits || 50000);
-    } catch (e) {}
+      if (!j.canceled) {
+        alert(j.error || 'No se pudo seleccionar la carpeta.');
+      }
+    } catch (e) {
+      alert('No se pudo seleccionar la carpeta.');
+    }
+  }
+
+  async function openLab2Folder() {
+    const inp = document.getElementById('ber_lab2_path');
+    if (!inp || !inp.value) return;
+    try {
+      const res = await fetch('/api/open_folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: inp.value })
+      });
+      const j = await res.json();
+      if (!j.ok) {
+        alert(j.error || 'No se pudo abrir la carpeta.');
+      }
+    } catch (e) {
+      alert('No se pudo abrir la carpeta.');
+    }
   }
 
   window.addEventListener('DOMContentLoaded', () => {
     fillBerLab2Path();
-    syncInheritedFields();
     refreshBerSubruns();
 
     const form = document.getElementById('ber-form');
@@ -386,6 +206,9 @@
           opt.textContent = rname;
           sel.appendChild(opt);
         }
+        if (!sel.value) {
+          sel.value = j.runs[j.runs.length - 1];
+        }
       }
     } catch (e) {}
   }
@@ -404,10 +227,16 @@
     if (progressText) progressText.textContent = 'Enviando simulación…';
     if (progressBar) progressBar.style.width = '0%';
     if (logEl) logEl.style.display = 'none';
+    const cancelBtn = document.getElementById('ber-cancel-btn');
+    if (cancelBtn) cancelBtn.style.display = 'inline-block';
 
     const fd = new FormData(form);
     const data = {};
     fd.forEach((v, k) => { data[k] = v; });
+    const sel = document.getElementById('ber_subrun_select');
+    if (sel && sel.options.length > 1 && !data.subrun) {
+      data.subrun = sel.options[sel.options.length - 1].value;
+    }
 
     const r = await fetch('/api/lab3/run_async', {
       method: 'POST',
@@ -418,6 +247,7 @@
     if (!j.ok) throw new Error(j.error || 'No se pudo iniciar la simulación');
 
     const outDir = j.out_dir;
+    window.__lab3CurrentOutDir = outDir;
     await pollBerStatus(outDir);
     const timer = setInterval(async () => {
       const done = await pollBerStatus(outDir);
@@ -445,13 +275,41 @@
       window.location.href = `/lab3/results?out=${encodeURIComponent(outDir)}`;
       return true;
     }
+    if (st.state === 'canceled') {
+      alert(st.message || 'Simulación cancelada');
+      const btn = document.querySelector('#ber-form button[type="submit"]');
+      if (btn) { btn.disabled = false; btn.textContent = 'Ejecutar Canal y Recepción'; }
+      const cancelBtn = document.getElementById('ber-cancel-btn');
+      if (cancelBtn) cancelBtn.style.display = 'none';
+      return true;
+    }
     if (st.state === 'error') {
       alert('Error: ' + (st.message || 'fallo en simulación'));
       const btn = document.querySelector('#ber-form button[type="submit"]');
-      if (btn) { btn.disabled = false; btn.textContent = 'Generar Curva'; }
+      if (btn) { btn.disabled = false; btn.textContent = 'Ejecutar Canal y Recepción'; }
+      const cancelBtn = document.getElementById('ber-cancel-btn');
+      if (cancelBtn) cancelBtn.style.display = 'none';
       return true;
     }
     return false;
+  }
+
+  async function cancelBerRun(){
+    const outDir = window.__lab3CurrentOutDir;
+    if (!outDir) return;
+    try {
+      const r = await fetch('/api/lab3/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ out: outDir }),
+      });
+      const j = await r.json();
+      if (!j.ok) {
+        alert(j.error || 'No se pudo solicitar la cancelación.');
+      }
+    } catch (e) {
+      alert('No se pudo solicitar la cancelación.');
+    }
   }
 </script>
 {% endblock %}

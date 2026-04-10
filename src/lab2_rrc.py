@@ -110,6 +110,11 @@ def plot_rrc(taps: np.ndarray, sps: int, out_path: str) -> None:
     plt.axhline(0, color='gray', lw=0.6)
     plt.axvline(0, color='gray', lw=0.6)
     plt.grid(True, alpha=0.25)
+    # Mostrar el soporte temporal real del filtro para que el efecto de `span`
+    # sea visible en la figura.
+    if t.size:
+        tlim = float(np.max(np.abs(t)))
+        plt.xlim(-tlim, tlim)
     plt.xlabel("Tiempo [símbolos]")
     plt.ylabel("h_RRC[n]")
     plt.title("Pulso raíz de coseno alzado (RRC)")
@@ -270,6 +275,166 @@ def plot_bits_and_iq(bits: np.ndarray, y: np.ndarray, sps: int, modulation: str,
     plt.savefig(out_path, dpi=140)
     plt.close()
 
+
+def plot_rrc_discrete_chain(symbols: np.ndarray, sps: int, taps: np.ndarray, out_dir: str, max_symbols: int = 6) -> None:
+    """Genera figuras didácticas del conformado RRC y del muestreo tras filtro acoplado."""
+    sym = np.asarray(symbols).ravel()
+    if sym.size == 0:
+        return
+    has_q = bool(np.max(np.abs(sym.imag)) > 1e-12)
+    sym = sym[:max_symbols]
+    x_up = np.zeros(sym.size * sps, dtype=np.complex128)
+    x_up[::sps] = sym.astype(np.complex128)
+
+    y_full = np.convolve(x_up, taps.astype(np.complex128), mode="full")
+    delay_tx = (taps.size - 1) // 2
+    tx = y_full[delay_tx: delay_tx + sym.size * sps]
+
+    rx_full = np.convolve(tx, taps.astype(np.complex128), mode="full")
+    delay_rx = (taps.size - 1) // 2
+    sample_idx = np.arange(delay_rx, len(rx_full), sps)[:sym.size]
+    rx_samples = rx_full[sample_idx]
+
+    # 1) simbolos -> upsampling
+    plt.figure(figsize=(7.2, 4.4 if has_q else 3.8))
+    plt.subplot(2, 1, 1)
+    plt.stem(np.arange(sym.size), sym.real, basefmt=" ", linefmt="C0-", markerfmt="C0o", label="I")
+    if has_q:
+        plt.stem(np.arange(sym.size), sym.imag, basefmt=" ", linefmt="C2-", markerfmt="C2s", label="Q")
+        plt.legend()
+    plt.ylabel("Valor")
+    plt.title("Simbolos y secuencia sobremuestreada")
+    plt.grid(True, alpha=0.25)
+
+    plt.subplot(2, 1, 2)
+    plt.stem(np.arange(len(x_up)), x_up.real, basefmt=" ", linefmt="C1-", markerfmt="C1o", label="I")
+    if has_q:
+        plt.stem(np.arange(len(x_up)), x_up.imag, basefmt=" ", linefmt="C3-", markerfmt="C3s", label="Q")
+        plt.legend()
+    for k in range(0, len(x_up), sps):
+        plt.axvline(k, color="gray", lw=0.5, alpha=0.4)
+    plt.xlabel("Indice de muestra n")
+    plt.ylabel("x_up[n]")
+    plt.grid(True, alpha=0.25)
+    plt.tight_layout()
+    plt.savefig(os.path.join(out_dir, "rrc_discrete_upsampling.png"), dpi=140)
+    plt.close()
+
+    # 2) salida del pulso conformado
+    plt.figure(figsize=(7.2, 4.4 if has_q else 4.0))
+    plt.subplot(2, 1, 1)
+    plt.plot(np.arange(len(taps)) / float(sps), taps, color="C2")
+    plt.axhline(0, color="gray", lw=0.6)
+    plt.grid(True, alpha=0.25)
+    plt.ylabel("h[n]")
+    plt.title("Filtro RRC y senal conformada")
+
+    plt.subplot(2, 1, 2)
+    plt.plot(np.arange(len(tx)), tx.real, color="C3", label="I")
+    if has_q:
+        plt.plot(np.arange(len(tx)), tx.imag, color="C4", label="Q")
+        plt.legend()
+    for k in range(0, len(x_up), sps):
+        plt.axvline(k, color="gray", lw=0.5, alpha=0.4)
+    plt.xlabel("Indice de muestra n")
+    plt.ylabel("y[n]")
+    plt.grid(True, alpha=0.25)
+    plt.tight_layout()
+    plt.savefig(os.path.join(out_dir, "rrc_discrete_shaping.png"), dpi=140)
+    plt.close()
+
+
+def plot_two_symbol_rrc_contributions(symbols: np.ndarray, sps: int, taps: np.ndarray, out_path: str) -> None:
+    """Muestra la contribución de los dos primeros símbolos pasados por el RRC.
+
+    Para BPSK se grafica la contribución real de cada símbolo y su suma.
+    Para QPSK se muestran las ramas I y Q por separado.
+    """
+    sym = np.asarray(symbols).ravel()
+    if sym.size < 2:
+        return
+    s1 = np.complex128(sym[0])
+    s2 = np.complex128(sym[1])
+    shift = int(sps)
+    L = int(taps.size + shift)
+    base = np.arange(L)
+    t_common = (base - (taps.size - 1) / 2) / float(sps)
+
+    c1 = np.zeros(L, dtype=np.complex128)
+    c2 = np.zeros(L, dtype=np.complex128)
+    c1[:taps.size] = s1 * taps.astype(np.complex128)
+    c2[shift:shift + taps.size] = s2 * taps.astype(np.complex128)
+    cs = c1 + c2
+    has_q = bool(
+        max(
+            np.max(np.abs([s1.imag, s2.imag])),
+            np.max(np.abs(c1.imag)),
+            np.max(np.abs(c2.imag)),
+            np.max(np.abs(cs.imag)),
+        ) > 1e-12
+    )
+
+    if has_q:
+        fig, axs = plt.subplots(3, 1, figsize=(8.4, 7.2), sharex=True, gridspec_kw={"height_ratios": [1, 3, 3]})
+
+        axs[0].stem([0, 1], [s1.real, s2.real], basefmt=" ", linefmt="C0-", markerfmt="C0o", label="I")
+        axs[0].stem([0, 1], [s1.imag, s2.imag], basefmt=" ", linefmt="C4-", markerfmt="C4s", label="Q")
+        axs[0].axhline(0, color="gray", lw=0.6)
+        axs[0].axvline(0, color="gray", lw=0.5, alpha=0.5)
+        axs[0].axvline(1, color="gray", lw=0.5, alpha=0.5)
+        axs[0].grid(True, alpha=0.25)
+        axs[0].set_ylabel("a[m]")
+        axs[0].set_title("Dos simbolos consecutivos y sus contribuciones tras el RRC")
+        axs[0].legend()
+
+        axs[1].plot(t_common, c1.real, label="Simbolo 1 (I)", color="C0", lw=1.8)
+        axs[1].plot(t_common, c2.real, label="Simbolo 2 (I)", color="C1", lw=1.8)
+        axs[1].plot(t_common, cs.real, label="Suma (I)", color="C3", lw=2.1)
+        axs[1].axhline(0, color="gray", lw=0.6)
+        axs[1].axvline(0, color="gray", lw=0.5, alpha=0.5)
+        axs[1].axvline(1, color="gray", lw=0.5, alpha=0.5)
+        axs[1].grid(True, alpha=0.25)
+        axs[1].set_ylabel("Amplitud")
+        axs[1].legend()
+
+        axs[2].plot(t_common, c1.imag, label="Simbolo 1 (Q)", color="C4", lw=1.8)
+        axs[2].plot(t_common, c2.imag, label="Simbolo 2 (Q)", color="C5", lw=1.8)
+        axs[2].plot(t_common, cs.imag, label="Suma (Q)", color="C6", lw=2.1)
+        axs[2].axhline(0, color="gray", lw=0.6)
+        axs[2].axvline(0, color="gray", lw=0.5, alpha=0.5)
+        axs[2].axvline(1, color="gray", lw=0.5, alpha=0.5)
+        axs[2].grid(True, alpha=0.25)
+        axs[2].set_xlabel("Tiempo [simbolos]")
+        axs[2].set_ylabel("Amplitud")
+        axs[2].legend()
+        axs[2].set_xlim(-4, 5)
+    else:
+        fig, axs = plt.subplots(2, 1, figsize=(8.4, 5.8), sharex=True, gridspec_kw={"height_ratios": [1, 4]})
+        axs[0].stem([0, 1], [s1.real, s2.real], basefmt=" ", linefmt="0.4", markerfmt="ko")
+        axs[0].axhline(0, color="gray", lw=0.6)
+        axs[0].axvline(0, color="gray", lw=0.5, alpha=0.5)
+        axs[0].axvline(1, color="gray", lw=0.5, alpha=0.5)
+        axs[0].grid(True, alpha=0.25)
+        axs[0].set_ylabel("a[m]")
+        axs[0].set_title("Dos simbolos consecutivos y sus contribuciones tras el RRC")
+
+        axs[1].plot(t_common, c1.real, label="Pulso centrado en 0Ts", color="C0", lw=1.8)
+        axs[1].plot(t_common, c2.real, label="Pulso centrado en 1Ts", color="C1", lw=1.8)
+        axs[1].plot(t_common, cs.real, label="Suma transmitida", color="C3", lw=2.1)
+        axs[1].axhline(0, color="gray", lw=0.6)
+        axs[1].axvline(0, color="gray", lw=0.5, alpha=0.5)
+        axs[1].axvline(1, color="gray", lw=0.5, alpha=0.5)
+        axs[1].annotate("centro simbolo 1", xy=(0, 0.02), xytext=(-1.8, 0.28), arrowprops=dict(arrowstyle="->", lw=0.8), fontsize=9)
+        axs[1].annotate("centro simbolo 2", xy=(1, 0.02), xytext=(1.8, 0.28), arrowprops=dict(arrowstyle="->", lw=0.8), fontsize=9)
+        axs[1].grid(True, alpha=0.25)
+        axs[1].set_xlim(-4, 5)
+        axs[1].set_xlabel("Tiempo [simbolos]")
+        axs[1].set_ylabel("Amplitud")
+        axs[1].legend()
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=140)
+    plt.close()
+
 @dataclass
 class Lab2Params:
     out_dir: str
@@ -303,6 +468,9 @@ def run_lab2(params: Lab2Params, bits: np.ndarray | None = None) -> Dict[str, st
         "spectrum_png": os.path.join(params.out_dir, "spectrum.png"),
         "eye_png": os.path.join(params.out_dir, "eye_diagram.png"),
         "bits_iq_transition_png": os.path.join(params.out_dir, "bits_iq_transition.png"),
+        "rrc_discrete_upsampling_png": os.path.join(params.out_dir, "rrc_discrete_upsampling.png"),
+        "rrc_discrete_shaping_png": os.path.join(params.out_dir, "rrc_discrete_shaping.png"),
+        "rrc_two_symbols_png": os.path.join(params.out_dir, "rrc_two_symbols.png"),
     }
     # Guardar parámetros (si se pasaron bits explícitos, reflejar su longitud)
     p = asdict(params)
@@ -324,6 +492,14 @@ def run_lab2(params: Lab2Params, bits: np.ndarray | None = None) -> Dict[str, st
     plot_eye(iq, params.sps, paths["eye_png"], span_symbols=eye_span, max_traces=eye_tr)
     try:
         plot_bits_and_iq(bits, iq, params.sps, params.modulation, paths["bits_iq_transition_png"])
+    except Exception:
+        pass
+    try:
+        plot_rrc_discrete_chain(syms, params.sps, taps, params.out_dir)
+    except Exception:
+        pass
+    try:
+        plot_two_symbol_rrc_contributions(syms, params.sps, taps, paths["rrc_two_symbols_png"])
     except Exception:
         pass
     return paths

@@ -68,9 +68,9 @@
     }
   </style>
   {% block head %}{% endblock %}
-  {% if config.DEBUG %}
-  <meta http-equiv="Cache-Control" content="no-store" />
-  {% endif %}
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
   <link rel="icon" href="data:,">
 </head>
 <body>
