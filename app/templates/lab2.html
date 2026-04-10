@@ -333,11 +333,15 @@
   }
 
   function buildLab2ResultsHtml(paths) {
-    const imgs = ['iq_time_png', 'constellation_png', 'spectrum_png', 'rrc_impulse_png', 'eye_png', 'bits_iq_transition_png'];
+    const imgs = ['iq_time_png', 'constellation_symbols_png', 'constellation_shaped_png', 'spectrum_png', 'rrc_impulse_png', 'eye_png', 'bits_iq_transition_png'];
     const bust = Date.now();
     let html = '<div class="figs">';
     for (const k of imgs) {
-      if (paths[k]) html += `<div><img src="/api/files?path=${paths[k]}&v=${bust}"/><div class="muted">${k.replace('_png', '')}.png</div></div>`;
+      if (!paths[k]) continue;
+      let label = `${k.replace('_png', '')}.png`;
+      if (k === 'constellation_symbols_png') label = 'constellation_symbols.png';
+      if (k === 'constellation_shaped_png') label = 'constellation_shaped.png';
+      html += `<div><img src="/api/files?path=${paths[k]}&v=${bust}"/><div class="muted">${label}</div></div>`;
     }
     if (paths['l1_bits_hist']) html += `<div><img src="/api/files?path=${paths['l1_bits_hist']}&v=${bust}"/><div class="muted">l1_bits_hist.png</div></div>`;
     if (paths['rrc_discrete_upsampling_png']) html += `<div><img src="/api/files?path=${paths['rrc_discrete_upsampling_png']}&v=${bust}"/><div class="muted">rrc_discrete_upsampling.png</div></div>`;

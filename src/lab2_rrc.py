@@ -140,8 +140,8 @@ def plot_time_iq(iq: np.ndarray, sps: int, out_path: str, nsamples: int = 6000) 
     plt.close()
 
 
-def plot_constellation(iq: np.ndarray, sps: int, out_path: str, npoints: int = 2000) -> None:
-    sym = iq[::sps]
+def plot_symbol_constellation(symbols: np.ndarray, out_path: str, npoints: int = 2000) -> None:
+    sym = np.asarray(symbols).ravel()
     if sym.size > npoints:
         rng = np.random.default_rng(0)
         idx = rng.choice(sym.size, size=npoints, replace=False)
@@ -158,7 +158,31 @@ def plot_constellation(iq: np.ndarray, sps: int, out_path: str, npoints: int = 2
     plt.ylim(-lim, lim)
     plt.xlabel("I")
     plt.ylabel("Q")
-    plt.title("Constelación")
+    plt.title("Constelación ideal de simbolos mapeados (antes del RRC)")
+    plt.axis("equal")
+    plt.grid(True, alpha=0.25)
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=140)
+    plt.close()
+
+
+def plot_shaped_constellation(iq: np.ndarray, sps: int, out_path: str, npoints: int = 2000) -> None:
+    sym = iq[::sps]
+    if sym.size > npoints:
+        rng = np.random.default_rng(0)
+        idx = rng.choice(sym.size, size=npoints, replace=False)
+        sym = sym[idx]
+    plt.figure()
+    plt.scatter(sym.real, sym.imag, s=8)
+    plt.axhline(0, color='gray', lw=0.6)
+    plt.axvline(0, color='gray', lw=0.6)
+    mx = float(np.max(np.abs(np.concatenate([sym.real, sym.imag])))) if sym.size else 1.0
+    lim = mx * 1.2 if mx > 0 else 1.0
+    plt.xlim(-lim, lim)
+    plt.ylim(-lim, lim)
+    plt.xlabel("I")
+    plt.ylabel("Q")
+    plt.title("Constelación de la señal conformada (después del RRC Tx)")
     plt.axis("equal")
     plt.grid(True, alpha=0.25)
     plt.tight_layout()
@@ -464,7 +488,8 @@ def run_lab2(params: Lab2Params, bits: np.ndarray | None = None) -> Dict[str, st
         "bits_tx_bin": os.path.join(params.out_dir, "bits_tx.bin"),
         "rrc_impulse_png": os.path.join(params.out_dir, "rrc_impulse.png"),
         "iq_time_png": os.path.join(params.out_dir, "iq_time.png"),
-        "constellation_png": os.path.join(params.out_dir, "constellation.png"),
+        "constellation_symbols_png": os.path.join(params.out_dir, "constellation_symbols.png"),
+        "constellation_shaped_png": os.path.join(params.out_dir, "constellation_shaped.png"),
         "spectrum_png": os.path.join(params.out_dir, "spectrum.png"),
         "eye_png": os.path.join(params.out_dir, "eye_diagram.png"),
         "bits_iq_transition_png": os.path.join(params.out_dir, "bits_iq_transition.png"),
@@ -485,7 +510,8 @@ def run_lab2(params: Lab2Params, bits: np.ndarray | None = None) -> Dict[str, st
     _safe_alias(paths["bits_bin"], paths["bits_tx_bin"])
     plot_rrc(taps, params.sps, paths["rrc_impulse_png"])
     plot_time_iq(iq, params.sps, paths["iq_time_png"])
-    plot_constellation(iq, params.sps, paths["constellation_png"])
+    plot_symbol_constellation(syms, paths["constellation_symbols_png"])
+    plot_shaped_constellation(iq, params.sps, paths["constellation_shaped_png"])
     plot_spectrum(iq, params.sps, paths["spectrum_png"])
     eye_span = max(1, int(params.eye_span))
     eye_tr = max(10, int(params.eye_traces))

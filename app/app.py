@@ -562,7 +562,7 @@ def create_app() -> Flask:
         p = Path(out_dir)
         figs = []
         # Preferencia por nombres estándar sugeridos
-        for name in ["iq_time.png", "constellation.png", "spectrum.png", "rrc_impulse.png", "eye_diagram.png", "l1_bits_hist.png", "bits_iq_transition.png", "rrc_discrete_upsampling.png", "rrc_discrete_shaping.png", "rrc_two_symbols.png"]:
+        for name in ["iq_time.png", "constellation_symbols.png", "constellation_shaped.png", "spectrum.png", "rrc_impulse.png", "eye_diagram.png", "l1_bits_hist.png", "bits_iq_transition.png", "rrc_discrete_upsampling.png", "rrc_discrete_shaping.png", "rrc_two_symbols.png"]:
             fn = p / name
             if fn.exists():
                 figs.append(name)
