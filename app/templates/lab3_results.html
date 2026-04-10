@@ -43,27 +43,174 @@
 </div>
 {% else %}
 <div class="grid" style="grid-template-columns: 2fr 1fr;">
-
-    <!-- Panel Principal: Gráfica BER -->
     <div class="card">
-        <h3>Curva BER vs Eb/N0</h3>
+        <h3>Recorrido del demodulador</h3>
+        <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; margin-bottom:14px;">
+            <div style="padding:12px; border:1px solid #dbeafe; border-radius:8px; background:#eff6ff;">
+                <strong>1. Entrada</strong>
+                {% if summary.channel_mode == 'ideal' %}
+                <div class="muted" style="margin-top:6px;">La señal IQ transmitida entra al receptor a través de un canal ideal sin ruido.</div>
+                <div style="margin-top:6px;"><code>r[n] = s[n]</code></div>
+                {% else %}
+                <div class="muted" style="margin-top:6px;">La señal IQ transmitida entra al receptor y se contamina con AWGN.</div>
+                <div style="margin-top:6px;"><code>r[n] = s[n] + w[n]</code></div>
+                {% endif %}
+            </div>
+            <div style="padding:12px; border:1px solid #dbeafe; border-radius:8px; background:#eff6ff;">
+                <strong>2. Filtro acoplado</strong>
+                <div class="muted" style="margin-top:6px;">Se aplica el RRC del receptor para maximizar SNR y controlar ISI.</div>
+                <div style="margin-top:6px;"><code>z[n] = r[n] * h_MF[n]</code></div>
+            </div>
+            <div style="padding:12px; border:1px solid #dbeafe; border-radius:8px; background:#eff6ff;">
+                <strong>3. Muestreo</strong>
+                <div class="muted" style="margin-top:6px;">Se toma una muestra por símbolo en los instantes óptimos.</div>
+                <div style="margin-top:6px;"><code>z[kT_s]</code></div>
+            </div>
+            <div style="padding:12px; border:1px solid #dbeafe; border-radius:8px; background:#eff6ff;">
+                <strong>4. Decisión</strong>
+                <div class="muted" style="margin-top:6px;">Las muestras se comparan con el umbral y se reconstruyen bits.</div>
+                <div style="margin-top:6px;"><code>bits_rx</code></div>
+            </div>
+        </div>
+
+        <div class="figs">
+            {% if 'tx_rx_constellations.png' in rx_figs %}
+            <div>
+                <img src="{{ url_for('api_files') }}?path={{ out }}/tx_rx_constellations.png" alt="tx_rx_constellations.png">
+                <div class="muted"><strong>Tx vs Rx</strong>: comparación antes y después del canal.</div>
+            </div>
+            {% endif %}
+            {% if 'mf_impulse.png' in rx_figs %}
+            <div>
+                <img src="{{ url_for('api_files') }}?path={{ out }}/mf_impulse.png" alt="mf_impulse.png">
+                <div class="muted"><strong>h_MF[n]</strong>: respuesta impulsiva del filtro acoplado.</div>
+            </div>
+            {% endif %}
+            {% if 'mf_freq.png' in rx_figs %}
+            <div>
+                <img src="{{ url_for('api_files') }}?path={{ out }}/mf_freq.png" alt="mf_freq.png">
+                <div class="muted"><strong>H_MF(f)</strong>: respuesta en frecuencia del filtro acoplado.</div>
+            </div>
+            {% endif %}
+            {% if 'rx_time.png' in rx_figs %}
+            <div>
+                <img src="{{ url_for('api_files') }}?path={{ out }}/rx_time.png" alt="rx_time.png">
+                <div class="muted"><strong>z[n]</strong>: señal a la salida del filtro acoplado.</div>
+            </div>
+            {% endif %}
+            {% if 'rx_eye.png' in rx_figs %}
+            <div>
+                <img src="{{ url_for('api_files') }}?path={{ out }}/rx_eye.png" alt="rx_eye.png">
+                <div class="muted"><strong>Ojo Rx</strong>: apertura en los instantes de muestreo.</div>
+            </div>
+            {% endif %}
+            {% if 'rx_constellation.png' in rx_figs %}
+            <div>
+                <img src="{{ url_for('api_files') }}?path={{ out }}/rx_constellation.png" alt="rx_constellation.png">
+                <div class="muted"><strong>Muestras z[kT_s]</strong>: constelación luego del muestreo.</div>
+            </div>
+            {% endif %}
+            {% if 'rx_decision.png' in rx_figs %}
+            <div>
+                <img src="{{ url_for('api_files') }}?path={{ out }}/rx_decision.png" alt="rx_decision.png">
+                <div class="muted"><strong>Decisión</strong>: umbral y símbolos detectados.</div>
+            </div>
+            {% endif %}
+            {% if 'ber_point.png' in rx_figs %}
+            <div>
+                <img src="{{ url_for('api_files') }}?path={{ out }}/ber_point.png" alt="ber_point.png">
+                <div class="muted"><strong>Punto de operación</strong>: BER en el Eb/N0 de diagnóstico.</div>
+            </div>
+            {% endif %}
+            {% if 'audio_compare_rx.png' in rx_figs %}
+            <div>
+                <img src="{{ url_for('api_files') }}?path={{ out }}/audio_compare_rx.png" alt="audio_compare_rx.png">
+                <div class="muted"><strong>Audio recuperado</strong>: comparación entre la señal original y la reconstruida.</div>
+            </div>
+            {% endif %}
+        </div>
+
         {% if ber_plot %}
-        <div
-            style="text-align: center; border: 1px solid #e5e7eb; padding: 10px; border-radius: 8px; margin-bottom: 10px;">
-            <img src="{{ url_for('serve_fig', subpath=ber_plot|relative_path) }}" alt="Curva BER"
-                style="max-width: 100%; height: auto;">
+        <div style="margin-top: 18px;">
+            <h3>Desempeño BER</h3>
+            <div style="text-align: center; border: 1px solid #e5e7eb; padding: 10px; border-radius: 8px; margin-bottom: 10px;">
+                <img src="{{ url_for('serve_fig', subpath=ber_plot|relative_path) }}" alt="Curva BER" style="max-width: 100%; height: auto;">
+            </div>
+            <div style="text-align: center;">
+                <a href="{{ url_for('download', out=out, file=ber_plot|basename) }}" class="btn">Descargar Gráfico</a>
+            </div>
         </div>
-        <div style="text-align: center;">
-            <a href="{{ url_for('download', out=out, file=ber_plot|basename) }}" class="btn">Descargar Gráfico</a>
-        </div>
-        {% else %}
-        <div class="flash warning">
-            No se encontró el gráfico de BER. Revisa los logs.
+        {% endif %}
+
+        {% if 'audio_rx.wav' in other or 'audio_tx_ref.wav' in other or 'text_rx.txt' in other or 'text_tx_ref.txt' in other %}
+        <div style="margin-top: 18px;">
+            <h3>Fuente Recuperada a la Salida del Receptor</h3>
+            <div class="muted" style="margin-bottom:10px;">
+                La reconstrucción se realiza luego del canal, del filtro acoplado RRC, del muestreo y de la decisión.
+                {% if recovery_ebn0_db is not none %}
+                Eb/N0 usado para esta reconstrucción: <strong>{{ recovery_ebn0_db }} dB</strong>.
+                {% endif %}
+            </div>
+
+            {% if 'audio_rx.wav' in other or 'audio_tx_ref.wav' in other %}
+            <div class="card" style="margin-bottom: 14px; background:#f8fafc;">
+                <h4 style="margin-top:0;">Audio</h4>
+                <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:12px;">
+                    {% if 'audio_tx_ref.wav' in other %}
+                    <div>
+                        <div class="muted" style="margin-bottom:6px;"><strong>Audio original</strong></div>
+                        <audio controls style="width:100%;">
+                            <source src="{{ url_for('api_files') }}?path={{ out }}/audio_tx_ref.wav" type="audio/wav">
+                        </audio>
+                        <div style="margin-top:8px;">
+                            <a href="{{ url_for('download', out=out, file='audio_tx_ref.wav') }}" class="btn secondary">Descargar original</a>
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% if 'audio_rx.wav' in other %}
+                    <div>
+                        <div class="muted" style="margin-bottom:6px;"><strong>Audio recuperado</strong></div>
+                        <audio controls style="width:100%;">
+                            <source src="{{ url_for('api_files') }}?path={{ out }}/audio_rx.wav" type="audio/wav">
+                        </audio>
+                        <div style="margin-top:8px;">
+                            <a href="{{ url_for('download', out=out, file='audio_rx.wav') }}" class="btn">Descargar recuperado</a>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+
+            {% if 'text_rx.txt' in other or 'text_tx_ref.txt' in other %}
+            <div class="card" style="background:#f8fafc;">
+                <h4 style="margin-top:0;">Texto</h4>
+                <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:12px;">
+                    {% if 'text_tx_ref.txt' in other %}
+                    <div>
+                        <div class="muted" style="margin-bottom:6px;"><strong>Texto original</strong></div>
+                        <pre style="white-space:pre-wrap; word-break:break-word; max-height:220px; overflow:auto; margin:0; padding:10px; background:white; border:1px solid #e5e7eb; border-radius:8px;">{{ text_tx_preview or '' }}</pre>
+                        <div style="margin-top:8px;">
+                            <a href="{{ url_for('api_files') }}?path={{ out }}/text_tx_ref.txt" class="btn secondary" target="_blank">Ver texto original</a>
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% if 'text_rx.txt' in other %}
+                    <div>
+                        <div class="muted" style="margin-bottom:6px;"><strong>Texto recuperado</strong></div>
+                        <pre style="white-space:pre-wrap; word-break:break-word; max-height:220px; overflow:auto; margin:0; padding:10px; background:white; border:1px solid #e5e7eb; border-radius:8px;">{{ text_rx_preview or '' }}</pre>
+                        <div style="margin-top:8px;">
+                            <a href="{{ url_for('api_files') }}?path={{ out }}/text_rx.txt" class="btn" target="_blank">Ver texto recuperado</a>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
         </div>
         {% endif %}
     </div>
 
-    <!-- Panel Lateral: Archivos y Datos -->
     <div class="card">
         <h3>Archivos Generados</h3>
         <ul style="list-style: none; padding: 0; margin: 0;">

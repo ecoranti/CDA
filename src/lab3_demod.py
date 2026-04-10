@@ -9,9 +9,13 @@ from pathlib import Path
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.io import wavfile
 from scipy.special import erfc
 
 from . import lab2_rrc
+from .audio_utils import a_law_expand, load_wav_mono, save_signal_quantized_compare
+from .bits_utils import bits_to_bytes
+from .scrambling import scramble
 
 matplotlib.use("Agg")
 
@@ -29,6 +33,7 @@ class Lab3Params:
     ebn0_step: float = 2.0
     trials_per_ebn0: int = 20
     seed: int = 0
+    channel_mode: str = "awgn"
 
 
 def _bps(modulation: str) -> int:
@@ -128,6 +133,135 @@ def calculate_ber(tx_bits: np.ndarray, rx_bits: np.ndarray) -> tuple[float, int]
     return float(n_errors) / float(L), n_errors
 
 
+def _reconstruct_midrise(q: np.ndarray, bits: int, xmin: float = -1.0, xmax: float = 1.0) -> np.ndarray:
+    L = 2 ** bits
+    q = np.asarray(q, dtype=np.int64)
+    step = (xmax - xmin) / L
+    return xmin + (q.astype(np.float32) + 0.5) * step
+
+
+def _bits_to_ints(bits: np.ndarray, bits_per_word: int) -> np.ndarray:
+    arr = np.asarray(bits, dtype=np.uint8).ravel()
+    n_words = arr.size // bits_per_word
+    if n_words <= 0:
+        return np.zeros(0, dtype=np.int64)
+    arr = arr[: n_words * bits_per_word].reshape(n_words, bits_per_word)
+    weights = (2 ** np.arange(bits_per_word - 1, -1, -1, dtype=np.int64)).reshape(1, -1)
+    return (arr.astype(np.int64) * weights).sum(axis=1)
+
+
+def _save_wav_from_unit_signal(x: np.ndarray, fs: int, path: Path) -> None:
+    x = np.asarray(x, dtype=np.float32)
+    x = np.clip(x, -1.0, 1.0)
+    y = np.round(x * 32767.0).astype(np.int16)
+    wavfile.write(str(path), int(fs), y)
+
+
+def _recover_audio_from_bits(bits_rx: np.ndarray, lab1_meta: dict | None, out_dir: Path) -> dict[str, str]:
+    if not lab1_meta:
+        return {}
+    source = (lab1_meta.get("source") or "audio").lower()
+    if source != "audio":
+        return {}
+
+    fs = int(lab1_meta.get("fs") or 16000)
+    n_bits = int(lab1_meta.get("n_bits") or 8)
+    quantizer = (lab1_meta.get("quantizer") or "alaw").lower()
+    lfsr_seed = int(lab1_meta.get("lfsr_seed") or int("0b1010110011", 2))
+    taps_meta = lab1_meta.get("lfsr_taps") or [9, 6]
+    lfsr_taps = tuple(int(t) for t in taps_meta)
+    lfsr_bitwidth = int(lab1_meta.get("lfsr_bitwidth") or 10)
+    audio_path = lab1_meta.get("audio")
+
+    bits_descr = np.asarray(
+        scramble(np.asarray(bits_rx, dtype=np.uint8).ravel().tolist(), seed=lfsr_seed, taps=lfsr_taps, bitwidth=lfsr_bitwidth),
+        dtype=np.uint8,
+    )
+    q_idx = _bits_to_ints(bits_descr, n_bits)
+    if q_idx.size == 0:
+        return {}
+
+    yhat = _reconstruct_midrise(q_idx, bits=n_bits, xmin=-1.0, xmax=1.0).astype(np.float32)
+    if quantizer == "alaw":
+        xhat = a_law_expand(yhat)
+    else:
+        xhat = yhat
+    xhat = np.asarray(xhat, dtype=np.float32)
+
+    paths: dict[str, str] = {}
+    rx_wav = out_dir / "audio_rx.wav"
+    _save_wav_from_unit_signal(xhat, fs, rx_wav)
+    paths["audio_rx_wav"] = str(rx_wav)
+
+    if audio_path:
+        try:
+            x_ref, _ = load_wav_mono(str(audio_path), target_fs=fs)
+            n = min(len(x_ref), len(xhat))
+            x_ref = x_ref[:n].astype(np.float32)
+            x_cmp = xhat[:n].astype(np.float32)
+            ref_wav = out_dir / "audio_tx_ref.wav"
+            _save_wav_from_unit_signal(x_ref, fs, ref_wav)
+            paths["audio_tx_ref_wav"] = str(ref_wav)
+            cmp_png = out_dir / "audio_compare_rx.png"
+            save_signal_quantized_compare(
+                x_ref,
+                x_cmp,
+                fs,
+                "Audio original vs recuperado",
+                str(cmp_png),
+            )
+            paths["audio_compare_rx_png"] = str(cmp_png)
+        except Exception:
+            pass
+    return paths
+
+
+def _recover_text_from_bits(bits_rx: np.ndarray, lab1_meta: dict | None, out_dir: Path) -> dict[str, str]:
+    if not lab1_meta:
+        return {}
+    source = (lab1_meta.get("source") or "audio").lower()
+    if source != "text":
+        return {}
+
+    lfsr_seed = int(lab1_meta.get("lfsr_seed") or int("0b1010110011", 2))
+    taps_meta = lab1_meta.get("lfsr_taps") or [9, 6]
+    lfsr_taps = tuple(int(t) for t in taps_meta)
+    lfsr_bitwidth = int(lab1_meta.get("lfsr_bitwidth") or 10)
+    text_path = lab1_meta.get("text")
+
+    bits_descr = np.asarray(
+        scramble(np.asarray(bits_rx, dtype=np.uint8).ravel().tolist(), seed=lfsr_seed, taps=lfsr_taps, bitwidth=lfsr_bitwidth),
+        dtype=np.uint8,
+    )
+    if bits_descr.size == 0:
+        return {}
+
+    raw_bytes = bytes(bits_to_bytes(bits_descr.tolist()))
+    text_rx = raw_bytes.decode("utf-8", errors="replace")
+
+    paths: dict[str, str] = {}
+    rx_txt = out_dir / "text_rx.txt"
+    rx_txt.write_text(text_rx, encoding="utf-8")
+    paths["text_rx_txt"] = str(rx_txt)
+
+    if text_path:
+        try:
+            ref_text = Path(text_path).read_text(encoding="utf-8")
+            ref_txt = out_dir / "text_tx_ref.txt"
+            ref_txt.write_text(ref_text, encoding="utf-8")
+            paths["text_tx_ref_txt"] = str(ref_txt)
+        except Exception:
+            pass
+    return paths
+
+
+def _recover_source_from_bits(bits_rx: np.ndarray, lab1_meta: dict | None, out_dir: Path) -> dict[str, str]:
+    paths: dict[str, str] = {}
+    paths.update(_recover_audio_from_bits(bits_rx, lab1_meta, out_dir))
+    paths.update(_recover_text_from_bits(bits_rx, lab1_meta, out_dir))
+    return paths
+
+
 def theoretical_ber_bpsk_qpsk(ebn0_db_arr: np.ndarray | list[float]) -> np.ndarray:
     ebn0_lin = 10 ** (np.array(ebn0_db_arr, dtype=np.float64) / 10.0)
     return 0.5 * erfc(np.sqrt(ebn0_lin))
@@ -165,13 +299,33 @@ def _plot_mf_impulse_and_freq(taps: np.ndarray, sps: int, impulse_path: Path, fr
     plt.close()
 
 
-def _plot_tx_rx_constellations(tx_syms: np.ndarray, rx_syms: np.ndarray, out_path: Path, ebn0: float) -> None:
-    all_vals = np.concatenate([tx_syms.real, tx_syms.imag, rx_syms.real, rx_syms.imag])
+def _plot_tx_rx_constellations(
+    tx_syms: np.ndarray,
+    rx_syms: np.ndarray,
+    out_path: Path,
+    ebn0: float,
+    channel_mode: str = "awgn",
+    edge_trim: int = 4,
+) -> None:
+    if edge_trim > 0:
+        if tx_syms.size > 2 * edge_trim:
+            tx_plot = tx_syms[edge_trim:-edge_trim]
+        else:
+            tx_plot = tx_syms
+        if rx_syms.size > 2 * edge_trim:
+            rx_plot = rx_syms[edge_trim:-edge_trim]
+        else:
+            rx_plot = rx_syms
+    else:
+        tx_plot = tx_syms
+        rx_plot = rx_syms
+
+    all_vals = np.concatenate([tx_plot.real, tx_plot.imag, rx_plot.real, rx_plot.imag])
     m = float(np.max(np.abs(all_vals))) if all_vals.size else 1.0
     lim = max(1.0, 1.15 * m)
     plt.figure(figsize=(8.5, 3.8))
     plt.subplot(1, 2, 1)
-    plt.scatter(tx_syms.real, tx_syms.imag, s=8, alpha=0.6)
+    plt.scatter(tx_plot.real, tx_plot.imag, s=8, alpha=0.6)
     plt.axhline(0, color="gray", lw=0.6)
     plt.axvline(0, color="gray", lw=0.6)
     plt.grid(True, alpha=0.25)
@@ -183,14 +337,18 @@ def _plot_tx_rx_constellations(tx_syms: np.ndarray, rx_syms: np.ndarray, out_pat
     plt.ylabel("Q")
 
     plt.subplot(1, 2, 2)
-    plt.scatter(rx_syms.real, rx_syms.imag, s=8, alpha=0.6)
+    plt.scatter(rx_plot.real, rx_plot.imag, s=8, alpha=0.6)
     plt.axhline(0, color="gray", lw=0.6)
     plt.axvline(0, color="gray", lw=0.6)
     plt.grid(True, alpha=0.25)
     plt.xlim(-lim, lim)
     plt.ylim(-lim, lim)
     plt.gca().set_aspect("equal", adjustable="box")
-    plt.title(f"Constelacion Rx (Eb/N0={ebn0:.1f} dB)")
+    mode = (channel_mode or "awgn").lower()
+    if mode == "ideal":
+        plt.title("Constelacion Rx (canal ideal)")
+    else:
+        plt.title(f"Constelacion Rx (Eb/N0={ebn0:.1f} dB)")
     plt.xlabel("I")
     plt.ylabel("Q")
     plt.tight_layout()
@@ -256,12 +414,20 @@ def _run_chain(
     rolloff: float,
     span: int,
     seed: int,
+    channel_mode: str = "awgn",
 ) -> dict:
     mod = modulation.upper()
     rng = np.random.default_rng(seed)
     bps = _bps(mod)
-    rx_noisy, noise = add_noise_with_noise(tx_signal, ebn0, sps, bps, rng=rng)
-    snr_est_db, ebn0_est_db = estimate_ebn0_db_from_signal_noise(tx_signal, noise, sps, bps)
+    mode = (channel_mode or "awgn").lower()
+    if mode == "ideal":
+        rx_noisy = np.asarray(tx_signal, dtype=np.complex64)
+        noise = np.zeros_like(rx_noisy)
+        snr_est_db = float("inf")
+        ebn0_est_db = float("inf")
+    else:
+        rx_noisy, noise = add_noise_with_noise(tx_signal, ebn0, sps, bps, rng=rng)
+        snr_est_db, ebn0_est_db = estimate_ebn0_db_from_signal_noise(tx_signal, noise, sps, bps)
     rx_filtered, taps_rx = matched_filter(rx_noisy, sps, rolloff, span)
     delay_rx = (len(taps_rx) - 1) // 2
     n_syms_expected = _n_symbols_from_bits(len(bits_tx), mod)
@@ -281,6 +447,7 @@ def _run_chain(
         "taps_rx": taps_rx,
         "snr_est_db": snr_est_db,
         "ebn0_est_db": ebn0_est_db,
+        "rx_channel": rx_noisy,
     }
 
 
@@ -294,6 +461,7 @@ def _render_single_outputs(
     ber: float,
     sps: int,
     modulation: str,
+    channel_mode: str = "awgn",
 ) -> dict[str, str]:
     paths: dict[str, str] = {}
     p = out_dir
@@ -311,7 +479,13 @@ def _render_single_outputs(
     _plot_ber_point(ber, ebn0, p / "ber_point.png")
     paths["ber_point_png"] = str(p / "ber_point.png")
 
-    _plot_tx_rx_constellations(tx_syms, rx_syms, p / "tx_rx_constellations.png", ebn0)
+    _plot_tx_rx_constellations(
+        tx_syms,
+        rx_syms,
+        p / "tx_rx_constellations.png",
+        ebn0,
+        channel_mode=channel_mode,
+    )
     paths["tx_rx_constellations_png"] = str(p / "tx_rx_constellations.png")
 
     _plot_mf_impulse_and_freq(taps_rx, sps, p / "mf_impulse.png", p / "mf_freq.png")
@@ -331,6 +505,7 @@ def _generate_diag_outputs_from_chain(
     sps: int,
     ebn0: float,
     chain: dict,
+    channel_mode: str = "awgn",
 ) -> dict[str, str]:
     tx_syms = lab2_rrc.map_bits_to_symbols(bits_tx, modulation)
     return _render_single_outputs(
@@ -343,6 +518,7 @@ def _generate_diag_outputs_from_chain(
         ber=float(chain["ber"]),
         sps=sps,
         modulation=modulation,
+        channel_mode=channel_mode,
     )
 
 
@@ -360,6 +536,8 @@ def _run_ber_curve(
     ebn0_step: float,
     trials_per_ebn0: int,
     seed: int,
+    channel_mode: str = "awgn",
+    cancel_cb=None,
 ) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
     mod = modulation.upper()
@@ -375,11 +553,15 @@ def _run_ber_curve(
     results_ebn0_est_std: list[float] = []
 
     for i, ebn0 in enumerate(ebn0_vals):
+        if cancel_cb and cancel_cb():
+            raise InterruptedError("Cancelado por el usuario")
         total_errors = 0
         total_bits = 0
         ebn0_estimates = []
         ber_trials = []
         for t in range(trials):
+            if cancel_cb and cancel_cb():
+                raise InterruptedError("Cancelado por el usuario")
             chain = _run_chain(
                 bits_tx=bits_tx,
                 tx_signal=tx_signal,
@@ -389,6 +571,7 @@ def _run_ber_curve(
                 rolloff=rolloff,
                 span=span,
                 seed=seed + (1000 * i) + t + 1,
+                channel_mode=channel_mode,
             )
             total_errors += int(chain["n_errors"])
             total_bits += int(len(bits_tx))
@@ -492,6 +675,8 @@ def run_simulation(params: Lab3Params) -> dict:
         ebn0_step=params.ebn0_step,
         trials_per_ebn0=params.trials_per_ebn0,
         seed=params.seed,
+        channel_mode=params.channel_mode,
+        cancel_cb=None,
     )
     # Empaquete diagnóstico para el informe (figuras de Rx, MF y constelaciones).
     eb_diag = float((params.ebn0_start + params.ebn0_end) / 2.0)
@@ -504,6 +689,7 @@ def run_simulation(params: Lab3Params) -> dict:
         rolloff=params.rolloff,
         span=params.span,
         seed=params.seed + 99991,
+        channel_mode=params.channel_mode,
     )
     diag_paths = _generate_diag_outputs_from_chain(
         out_dir=Path(params.out_dir),
@@ -512,6 +698,7 @@ def run_simulation(params: Lab3Params) -> dict:
         sps=params.sps,
         ebn0=eb_diag,
         chain=chain_diag,
+        channel_mode=params.channel_mode,
     )
     res["diag_ebn0_db"] = eb_diag
     res["diag_paths"] = diag_paths
@@ -519,7 +706,7 @@ def run_simulation(params: Lab3Params) -> dict:
     return res
 
 
-def run_single(params: Lab3Params, bits: np.ndarray | None = None) -> dict:
+def run_single(params: Lab3Params, bits: np.ndarray | None = None, lab1_meta: dict | None = None) -> dict:
     outp = Path(params.out_dir)
     outp.mkdir(parents=True, exist_ok=True)
     mod = params.modulation.upper()
@@ -542,6 +729,7 @@ def run_single(params: Lab3Params, bits: np.ndarray | None = None) -> dict:
         rolloff=params.rolloff,
         span=params.span,
         seed=params.seed + 11,
+        channel_mode=params.channel_mode,
     )
 
     fig_paths = _render_single_outputs(
@@ -554,7 +742,10 @@ def run_single(params: Lab3Params, bits: np.ndarray | None = None) -> dict:
         ber=float(chain["ber"]),
         sps=params.sps,
         modulation=mod,
+        channel_mode=params.channel_mode,
     )
+    recovered_paths = _recover_source_from_bits(chain["bits_rx"], lab1_meta, outp)
+    fig_paths.update(recovered_paths)
     return {
         "ebn0": ebn0_val,
         "ebn0_target_db": ebn0_val,
@@ -598,7 +789,7 @@ def _load_bits_from_lab2_dir(lab2_path: Path, meta: dict) -> tuple[np.ndarray, s
     return unpacked.astype(np.uint8), f"packed_bits:{bits_file.name}"
 
 
-def run_from_file(lab2_dir: str, ebn0: float, out_dir: str = "outputs/lab3_integrated") -> dict:
+def run_from_file(lab2_dir: str, ebn0: float, out_dir: str = "outputs/lab3_integrated", channel_mode: str = "awgn") -> dict:
     lab2_path = Path(lab2_dir)
     params_file = lab2_path / "params.json"
     iq_file = lab2_path / "iq.bin"
@@ -634,6 +825,7 @@ def run_from_file(lab2_dir: str, ebn0: float, out_dir: str = "outputs/lab3_integ
         rolloff=alpha,
         span=span,
         seed=7,
+        channel_mode=channel_mode,
     )
 
     out_path = Path(out_dir)
@@ -647,7 +839,10 @@ def run_from_file(lab2_dir: str, ebn0: float, out_dir: str = "outputs/lab3_integ
         ber=float(chain["ber"]),
         sps=sps,
         modulation=mod,
+        channel_mode=channel_mode,
     )
+    recovered_paths = _recover_source_from_bits(chain["bits_rx"], meta.get("lab1"), out_path)
+    fig_paths.update(recovered_paths)
 
     return {
         "ebn0": float(ebn0),
@@ -661,6 +856,7 @@ def run_from_file(lab2_dir: str, ebn0: float, out_dir: str = "outputs/lab3_integ
         "paths": fig_paths,
         "ok": True,
         "source": "file_integration",
+        "channel_mode": channel_mode,
         "debug": {
             "tx_10": bits_tx[:10].tolist(),
             "rx_10": chain["bits_rx"][:10].tolist(),
@@ -680,6 +876,8 @@ def run_simulation_from_file(
     ebn0_step: float,
     trials_per_ebn0: int = 20,
     seed: int = 0,
+    channel_mode: str = "awgn",
+    cancel_cb=None,
 ) -> dict:
     lab2_path = Path(lab2_dir)
     params_file = lab2_path / "params.json"
@@ -719,6 +917,8 @@ def run_simulation_from_file(
         ebn0_step=ebn0_step,
         trials_per_ebn0=trials_per_ebn0,
         seed=seed,
+        channel_mode=channel_mode,
+        cancel_cb=cancel_cb,
     )
     eb_diag = float((ebn0_start + ebn0_end) / 2.0)
     chain_diag = _run_chain(
@@ -730,6 +930,7 @@ def run_simulation_from_file(
         rolloff=alpha,
         span=span,
         seed=seed + 99991,
+        channel_mode=channel_mode,
     )
     diag_paths = _generate_diag_outputs_from_chain(
         out_dir=Path(out_dir),
@@ -738,12 +939,17 @@ def run_simulation_from_file(
         sps=sps,
         ebn0=eb_diag,
         chain=chain_diag,
+        channel_mode=channel_mode,
     )
     res["diag_ebn0_db"] = eb_diag
     res["diag_paths"] = diag_paths
     res["source"] = "lab2_file_chain"
     res["lab2_path"] = str(lab2_path)
     res["bits_mode"] = bits_mode
+    res["channel_mode"] = channel_mode
+    recovered_paths = _recover_source_from_bits(chain_diag["bits_rx"], meta.get("lab1"), Path(out_dir))
+    if recovered_paths:
+        res["recovered_paths"] = recovered_paths
     return res
 
 

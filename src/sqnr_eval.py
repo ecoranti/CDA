@@ -1,10 +1,10 @@
-"""Utilidades para evaluar MSE y SQNR de cuantización uniforme y µ-law.
+"""Utilidades para evaluar MSE y SQNR de cuantización uniforme y A-Law.
 
 Este módulo expone funciones usadas por src/main.py:
     - mse(x, y)
     - sqnr_db(x, y)
     - eval_uniform(x, bits)
-    - eval_mulaw(x, mu, bits)
+    - eval_alaw(x, A, bits)       -- A-law (G.711 internacional, Argentina)
 """
 
 from typing import Tuple
@@ -12,8 +12,8 @@ import numpy as np
 
 from .audio_utils import (
     uniform_quantize,
-    mu_law_compand,
-    mu_law_expand,
+    a_law_compand,
+    a_law_expand,
 )
 
 
@@ -34,13 +34,13 @@ def eval_uniform(x: np.ndarray, bits: int = 8, xmin: float = -1.0, xmax: float =
     return xhat.astype(np.float32)
 
 
-def eval_mulaw(x: np.ndarray, mu: int = 255, bits: int = 8, xmin: float = -1.0, xmax: float = 1.0) -> np.ndarray:
-    """Cuantiza x con companding µ-law + cuantización uniforme y devuelve xhat expandida."""
+def eval_alaw(x: np.ndarray, A: float = 87.6, bits: int = 8, xmin: float = -1.0, xmax: float = 1.0) -> np.ndarray:
+    """Cuantiza x con companding A-law (G.711 internacional) y devuelve xhat expandida."""
     x = np.asarray(x, dtype=np.float32)
-    y = mu_law_compand(x, mu=mu)
+    y = a_law_compand(x, A=A)
     q, _ = uniform_quantize(y, bits=bits, xmin=xmin, xmax=xmax)
     yhat = _reconstruct_midrise(q, bits=bits, xmin=xmin, xmax=xmax)
-    xhat = mu_law_expand(yhat, mu=mu)
+    xhat = a_law_expand(yhat, A=A)
     return xhat.astype(np.float32)
 
 

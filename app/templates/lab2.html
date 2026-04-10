@@ -1,478 +1,348 @@
 {% extends 'base.html' %}
 {% block content %}
-<h2>Modulación Digital + Pulso RRC (Modulación)</h2>
-<form method="post" action="{{ url_for('lab2_run') }}">
+<style>
+  .lab2-topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 18px;
+  }
+  .lab2-card {
+    padding: 18px 20px;
+  }
+  .lab2-card h3 {
+    margin-bottom: 14px;
+  }
+  .lab2-card .row {
+    gap: 18px 16px;
+  }
+  .lab2-card .field {
+    margin-bottom: 2px;
+  }
+  .lab2-card .muted {
+    margin-top: 4px;
+    line-height: 1.45;
+  }
+  .lab2-source-grid {
+    display: grid;
+    gap: 14px;
+    margin-bottom: 16px;
+  }
+  .lab2-source-row {
+    display: grid;
+    grid-template-columns: 90px 1fr auto auto;
+    gap: 10px;
+    align-items: center;
+  }
+  .lab2-runbox {
+    padding: 18px;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 10px;
+    margin-bottom: 18px;
+  }
+  .lab2-runbox .muted {
+    margin-top: 10px;
+    line-height: 1.4;
+  }
+  @media (max-width: 860px) {
+    .lab2-topbar {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+    .lab2-source-row {
+      grid-template-columns: 1fr;
+      align-items: stretch;
+    }
+  }
+</style>
+
+<div class="lab2-topbar">
+  <h2 style="margin:0;">Modulación Digital + Pulso RRC</h2>
+  <a class="btn secondary" href="{{ url_for('index') }}">Ir al Inicio</a>
+</div>
+
+<!-- ─── Parámetros de Modulación ─── -->
+<div class="card lab2-card" style="margin-bottom: 16px;">
+  <h3>Parámetros de Modulación</h3>
   <div class="row">
+
     <div class="field">
-      <label title="Carpeta base donde se crearán las corridas con timestamp">Salida</label>
-      <input name="out" value="{{ defaults.out_lab2 }}">
-    </div>
-    <div class="field">
-      <label title="Esquema de mapeo bits→símbolos (1 o 2 bits/símbolo)">Modulación</label>
-      <select name="modulation">
+      <label>Modulación</label>
+      <select name="modulation" id="mod_modulation">
         <option>BPSK</option>
         <option selected>QPSK</option>
       </select>
+      <span class="muted">BPSK: 1 bit/símbolo. QPSK: 2 bits/símbolo, misma BER que BPSK pero doble eficiencia espectral.</span>
     </div>
+
     <div class="field">
-      <label title="Cantidad de bits pseudoaleatorios cuando no se usan bits de Formateo">Cantidad de bits</label>
-      <input name="bits_len" type="number" value="2000">
+      <label>Samples por símbolo (sps)</label>
+      <input id="mod_sps" type="number" value="8">
+      <span class="muted">Factor de oversampling. sps=8 → 8 muestras IQ por símbolo. Mínimo recomendado: 4.</span>
     </div>
+
     <div class="field">
-      <label title="Oversampling: muestras por símbolo">Samples por símbolo (sps)</label>
-      <input name="sps" type="number" value="8">
+      <label>Roll-off α (0–1)</label>
+      <input id="mod_alpha" type="number" step="0.05" min="0" max="1" value="0.25">
+      <span id="mod_alpha_hint" class="muted">Exceso de BW: BW = (1+α)·Rs/2.</span>
     </div>
+
     <div class="field">
-      <label title="Factor de roll-off del RRC (0..1)">Roll-off α</label>
-      <input name="alpha" type="number" step="0.05" value="0.25">
+      <label>Span del filtro RRC (símbolos)</label>
+      <input id="mod_span" type="number" value="8">
+      <span class="muted">Duración del filtro truncado en símbolos. Más span = menos ISI residual, más cómputo.</span>
     </div>
+
     <div class="field">
-      <label title="Longitud del pulso RRC en símbolos">Span del filtro (símbolos)</label>
-      <input name="span_symbols" type="number" value="8">
+      <label>Salida</label>
+      <input id="mod_out" value="{{ defaults.out_lab2 }}">
     </div>
-    <div class="field">
-      <label title="Semilla del generador aleatorio para reproducibilidad">Seed (aleatoriedad)</label>
-      <input name="seed" type="number" value="0">
-    </div>
+
   </div>
-  <button class="btn" type="submit">Generar señal IQ</button>
-  <button class="btn secondary" type="button" onclick="presetLab2()">Valores típicos</button>
-  <button class="btn secondary" type="button" onclick="quickAlpha(0.1)">α=0.1</button>
-  <button class="btn secondary" type="button" onclick="quickAlpha(0.25)">α=0.25</button>
-  <button class="btn secondary" type="button" onclick="quickAlpha(0.5)">α=0.5</button>
-  <button class="btn secondary" type="button" onclick="runApiLab2()">Ejecutar (API, sin recargar)</button>
-  <button class="btn secondary" type="button" onclick="quickExampleLab2()">Ejemplo rápido</button>
-  <a class="btn secondary" href="{{ url_for('index') }}">Ir al Inicio</a>
-</form>
-<h3>Usar bits generados en Formateo</h3>
-<div class="row">
-  <div class="field">
-    <label>Audio WAV (Formateo)</label>
-    <input id="l1_audio" value="{{ defaults.audio }}">
-  </div>
-  <div class="field">
-    <label>Texto (Formateo)</label>
-    <input id="l1_text" value="{{ defaults.text }}">
-  </div>
-  <div class="field">
-    <label>Frecuencia de muestreo fs [Hz] (Formateo)</label>
-    <input id="l1_fs" type="number" value="16000">
-  </div>
-  <div class="field">
-    <label>n_bits cuantización (Formateo)</label>
-    <select id="l1_nbits">
-      <option value="8" selected>8</option>
-      <option value="10">10</option>
-      <option value="12">12</option>
-    </select>
-  </div>
-  <div class="field">
-    <label>Cuantizador (Formateo)</label>
-    <select id="l1_quant">
-      <option value="mulaw" selected>µ-law</option>
-      <option value="uniform">Uniforme</option>
-    </select>
-  </div>
-  <div class="field">
-    <label>Fuente para bits</label>
-    <div class="muted" style="margin-top:4px;">Si elegís <strong>Separados</strong>, se generan dos corridas independientes en <code>.../audio</code> y <code>.../text</code>.</div>
-    <select id="l1_source">
-      <option value="audio" selected>Audio</option>
-      <option value="text">Texto</option>
-      <option value="concat">Concatenar (audio+texto)</option>
-      <option value="separate">Audio y Texto (separados)</option>
-    </select>
-  </div>
-  <div class="field">
-    <label>Método de ecualización</label>
-    <select id="l1_method">
-      <option value="scrambling" selected>Scrambling</option>
-    </select>
-  </div>
-  <details class="advanced" style="grid-column: 1 / -1;">
-    <summary>Avanzado Formateo</summary>
-    <div class="row">
-      <div class="field">
-        <label title="µ para cuantización µ-law (si aplica)">µ (Formateo) <span class="badge">def=255</span></label>
-        <input id="l1_mu" type="number" value="255">
-      </div>
-      <div class="field">
-        <label title="Semilla del LFSR (acepta 0b/0x)">LFSR seed <span class="badge">0b1010110011</span></label>
-        <input id="l1_lfsr_seed" value="0b1010110011">
-      </div>
-      <div class="field">
-        <label title="Taps del LFSR separados por coma">LFSR taps <span class="badge">9,6</span></label>
-        <input id="l1_lfsr_taps" value="9,6">
-      </div>
-      <div class="field">
-        <label title="Bitwidth del LFSR">LFSR bitwidth <span class="badge">10</span></label>
-        <input id="l1_lfsr_bitwidth" type="number" value="10">
-      </div>
-    </div>
-  </details>
 </div>
 
-<div style="margin-top: 20px; padding: 15px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px;">
-  <p style="margin-top: 0; font-weight: bold; color: #1e3a8a; margin-bottom: 10px;">Acción Principal</p>
+<!-- ─── Fuente de bits (Formateo) ─── -->
+<div class="card lab2-card" style="margin-bottom: 16px;">
+  <h3>Fuente de bits — Formateo</h3>
+  <div class="lab2-source-grid">
+    <div class="lab2-source-row">
+      <label for="l1_audio" style="margin:0;">Audio WAV</label>
+      <input id="l1_audio" value="{{ defaults.audio }}">
+      <button type="button" class="btn secondary" onclick="pickSourceFile('l1_audio', 'audio')">Elegir...</button>
+      <button type="button" class="btn secondary" onclick="openInputFolder('l1_audio')">Abrir carpeta</button>
+    </div>
+
+    <div class="lab2-source-row">
+      <label for="l1_text" style="margin:0;">Texto</label>
+      <input id="l1_text" value="{{ defaults.text }}">
+      <button type="button" class="btn secondary" onclick="pickSourceFile('l1_text', 'text')">Elegir...</button>
+      <button type="button" class="btn secondary" onclick="openInputFolder('l1_text')">Abrir carpeta</button>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="field">
+      <label>Frecuencia de muestreo fs [Hz]</label>
+      <input id="l1_fs" type="number" value="16000">
+    </div>
+
+    <div class="field">
+      <label>Bits de cuantización (n) — L = 2ⁿ niveles</label>
+      <select id="l1_nbits">
+        <option value="8" selected>8 bits → 256 niveles</option>
+        <option value="10">10 bits → 1024 niveles</option>
+        <option value="12">12 bits → 4096 niveles</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>Cuantizador</label>
+      <select id="l1_quant">
+        <option value="alaw" selected>No uniforme A-law — G.711 (Argentina/Europa)</option>
+        <option value="uniform">Uniforme</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>Fuente para bits</label>
+      <select id="l1_source">
+        <option value="audio" selected>Audio</option>
+        <option value="text">Texto</option>
+      </select>
+      <span class="muted">La modulación usa directamente los bits generados en Formateo a partir de la fuente seleccionada.</span>
+    </div>
+
+  </div>
+
+  <!-- Hidden campos requeridos por el backend -->
+  <input type="hidden" id="l1_method" value="scrambling">
+  <input type="hidden" id="l1_lfsr_seed" value="0b1010110011">
+  <input type="hidden" id="l1_lfsr_taps" value="9,6">
+  <input type="hidden" id="l1_lfsr_bitwidth" value="10">
+</div>
+
+<!-- ─── Botón principal ─── -->
+<div class="lab2-runbox">
   <button class="btn" type="button" onclick="runApiLab2FromLab1()"
     style="width: 100%; font-size: 1.1em; padding: 12px; background-color: #2563eb;">
-    EJECUTAR SIMULACIÓN COMPLETA (Formateo &rarr; Modulación)
+    EJECUTAR SIMULACIÓN COMPLETA (Formateo → Modulación)
   </button>
-  <p class="muted" style="margin-bottom: 0; margin-top: 8px; font-size: 0.9em; text-align: center;">Usá TODOS los
-    parámetros configurados arriba (Audio/Texto/LFSR) + Modulación.</p>
-  <p class="muted" style="margin-top: 6px; font-size: 0.85em; text-align: center;">Nota: en este modo se <strong>ignoran</strong> <code>Cantidad de bits</code> y <code>Seed</code>, porque los bits ya vienen del Formateo.</p>
+  <p class="muted" style="margin: 8px 0 0; text-align: center; font-size: 0.88em;">
+    Genera los bits en Formateo desde la fuente seleccionada, aplica scrambling y usa esa secuencia como entrada directa del transmisor.
+  </p>
 </div>
 
-<div style="margin-top: 15px;">
-  <p style="font-size: 0.9em; font-weight: bold; color: #555;">Configuración Rápida (Presets de fuente):</p>
-  <div style="display: flex; gap: 10px;">
-    <button class="btn secondary" type="button" onclick="presetSource('audio')"
-      title="Configura la fuente como SOLO Audio">Preset: Solo Audio</button>
-    <button class="btn secondary" type="button" onclick="presetSource('text')"
-      title="Configura la fuente como SOLO Texto">Preset: Solo Texto</button>
-    <button class="btn secondary" type="button" onclick="presetSource('concat')"
-      title="Configura la fuente como Audio + Texto concatenado">Preset: Concat</button>
-    <button class="btn secondary" type="button" onclick="presetSource('separate')"
-      title="Configura la fuente como Audio y Texto por separado">Preset: Separados</button>
-  </div>
-</div>
-
-<details class="param-guide" style="margin-top: 20px;">
-  <summary>Guía de parámetros (Modulación)</summary>
-  <div class="hint">Referencia rápida de qué controla cada parámetro del modulador, su fundamento teórico y el efecto esperado al modificarlo. Para los parámetros heredados del Formateo, ver la guía de parámetros del Formateo.</div>
-  <table>
-    <thead>
-      <tr>
-        <th>Parámetro</th>
-        <th>Qué controla</th>
-        <th>Fundamento teórico</th>
-        <th>Si aumenta</th>
-        <th>Si disminuye</th>
-        <th>Impacto en etapas siguientes</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td><strong>Modulación</strong></td>
-        <td>Esquema de mapeo bits→símbolos complejos IQ. BPSK: 1 bit/símbolo, 2 puntos en constelación. QPSK: 2 bits/símbolo, 4 puntos.</td>
-        <td>BPSK: M=2, k=1 bit/símbolo, 1 dimensión (solo eje I). QPSK: M=4, k=2 bits/símbolo, 2 dimensiones (I y Q). Ambas tienen la misma BER para igual Eb/N₀: P_b = Q(√(2Eb/N₀)) (Sklar, s4.4.1).</td>
-        <td>QPSK duplica la eficiencia espectral de BPSK: el mismo ancho de banda transporta el doble de información por símbolo.</td>
-        <td>BPSK es más robusto al ruido (mayor distancia entre puntos de constelación para la misma potencia), pero requiere el doble de ancho de banda para la misma tasa de bits.</td>
-        <td>La modulación define la eficiencia espectral y la complejidad del detector en Canal y Rx. Para igual Eb/N₀, BER_BPSK = BER_QPSK (misma curva teórica). La ventaja de QPSK es espectral: igual BER con el doble de bits por símbolo.</td>
-      </tr>
-      <tr>
-        <td><strong>Cantidad de bits</strong></td>
-        <td>Número total de bits a modular cuando no se usan bits del Formateo. Se generan pseudoaleatoriamente con la semilla configurada.</td>
-        <td>La longitud de la secuencia determina la densidad estadística de la constelación y la suavidad del espectro de potencia estimado (Welch). Con QPSK se generan la mitad de símbolos que bits (k=2).</td>
-        <td>Más bits → constelación más densa y representativa, espectro más suave, diagrama de ojo con más transiciones visibles.</td>
-        <td>Menos bits → procesamiento más rápido, pero la constelación puede verse dispersa y las estadísticas del espectro menos confiables.</td>
-        <td>Con QPSK, 2000 bits generan 1000 símbolos → 8000 muestras IQ con sps=8. Para curvas BER confiables en Canal y Rx se necesitan al menos 50000 bits.</td>
-      </tr>
-      <tr>
-        <td><strong>Samples por símbolo (sps)</strong></td>
-        <td>Factor de oversampling: cuántas muestras IQ representa cada símbolo después del filtro RRC. Determina la resolución temporal de la señal.</td>
-        <td>El sobremuestreo (sps > 1) es necesario para implementar el filtro RRC en tiempo discreto. El mínimo teórico es sps=2 (Nyquist); valores típicos en sistemas reales son sps=4–8. sps alto mejora visualización a costa de cómputo.</td>
-        <td>Mayor sps → mejor resolución temporal del pulso RRC, diagrama de ojo más nítido, mayor costo computacional y más muestras a procesar en Canal y Rx.</td>
-        <td>Menor sps → procesamiento más rápido, pero la forma del pulso RRC queda mal representada y el diagrama de ojo pierde definición. Mínimo recomendado: sps=4.</td>
-        <td>El receptor del Canal y Rx debe conocer el sps para el muestreo en instantes óptimos. Mayor sps facilita la sincronización de símbolo.</td>
-      </tr>
-      <tr>
-        <td><strong>Roll-off α</strong></td>
-        <td>Factor de exceso de ancho de banda del filtro RRC (Root Raised Cosine). Define el compromiso entre eficiencia espectral e ISI (Interferencia InterSímbolo).</td>
-        <td>El ancho de banda del sistema es W = (1+α)/2·Rs (Sklar, Ec. 3.81). Con α=0 se alcanza el mínimo teórico de Nyquist (W=Rs/2) pero el filtro es irrealizable (sinc infinito). α > 0 hace el filtro físicamente realizable a costa de mayor ancho de banda.</td>
-        <td>α mayor → espectro más ancho (menor eficiencia espectral), pero pulso más corto en el tiempo (menor ISI, mayor apertura del ojo, más tolerancia al jitter).</td>
-        <td>α menor → espectro más angosto (mayor eficiencia espectral), pero pulso con colas más largas en el tiempo (mayor ISI si hay desincronización, ojo más cerrado).</td>
-        <td>El receptor del Canal y Rx usa el mismo α para construir el filtro acoplado. α=0 → filtro de Nyquist ideal (pulso sinc, banda mínima pero infinito en tiempo). α=1 → banda doble, pulso muy compacto.</td>
-      </tr>
-      <tr>
-        <td><strong>Span del filtro (símbolos)</strong></td>
-        <td>Longitud truncada del pulso RRC, expresada en número de símbolos. El filtro se implementa con span·sps + 1 coeficientes.</td>
-        <td>El filtro RRC ideal tiene soporte infinito. El truncamiento a span símbolos introduce ISI residual proporcional a la energía descartada de las colas. El número de coeficientes es N = 2·span·sps + 1.</td>
-        <td>Span mayor → el pulso captura más energía de las colas → respuesta más cercana al RRC ideal → menor ISI residual, pero mayor latencia y costo computacional.</td>
-        <td>Span menor → el pulso está más truncado → mayor ISI residual y distorsión en el diagrama de ojo, pero menor latencia. Mínimo recomendado: span=4.</td>
-        <td>El receiver del Canal y Rx debe usar el mismo span para construir el filtro acoplado. Span mayor mejora marginalmente el BER pero aumenta la complejidad del receptor.</td>
-      </tr>
-      <tr>
-        <td><strong>Seed (aleatoriedad)</strong></td>
-        <td>Semilla del generador de números pseudoaleatorios de NumPy. Controla la secuencia de bits generados cuando no se usan bits del Formateo.</td>
-        <td>La semilla del generador pseudoaleatorio (NumPy RNG) garantiza reproducibilidad exacta entre ejecuciones. Solo es relevante cuando no se usan bits del Formateo. Documentar la semilla usada para reproducibilidad del informe.</td>
-        <td>Diferente semilla → secuencia de bits diferente → constelación y trayectorias IQ distintas, pero mismas propiedades estadísticas promedio.</td>
-        <td>Seed=0 garantiza reproducibilidad exacta de los resultados entre ejecuciones.</td>
-        <td>Irrelevante cuando se usan bits del Formateo. Para comparar configuraciones del filtro, usar siempre la misma seed para que las diferencias sean atribuibles solo a los parámetros del filtro.</td>
-      </tr>
-      <tr>
-        <td><strong>Fuente para bits</strong></td>
-        <td>Selecciona de dónde provienen los bits: solo audio (Fuente A), solo texto (Fuente B), concatenación o ejecución separada de ambas fuentes.</td>
-        <td>La fuente de bits determina las propiedades estadísticas de la secuencia modulada. Bits equiprobables (P(0)≈P(1)≈0.5) son necesarios para que la constelación tenga densidad uniforme y el espectro sea plano dentro de la banda RRC.</td>
-        <td>"Concat" maximiza la cantidad de bits disponibles y combina las características estadísticas de ambas fuentes. "Separados" genera dos corridas independientes (audio y texto) con resultados y archivos por separado.</td>
-        <td>"Texto" genera menos bits pero es más rápido; útil para pruebas rápidas de la cadena Formateo→Modulación.</td>
-        <td>Independientemente de la fuente, la ecualización (scrambling) debe garantizar P(0)≈P(1)≈0.5. El histograma de bits l1_bits_hist.png lo confirma.</td>
-      </tr>
-      <tr>
-        <td><strong>Método de ecualización</strong></td>
-        <td>Técnica de ecualización del histograma de bits proveniente del Formateo: scrambling LFSR (aleatorización XOR).</td>
-        <td>El scrambling LFSR aplica XOR bit a bit con una PRBS, garantizando P(0)≈P(1)≈0.5 sin comprimir ni alterar la longitud base de la secuencia.</td>
-        <td>Se conserva la tasa binaria original, pero se obtiene una secuencia más apta para modular sin sesgo DC ni asimetrías en la constelación.</td>
-        <td>Scrambling no comprime pero es más robusto y compatible con sistemas en tiempo real. Preferido para transmisión de voz.</td>
-        <td>Con cualquier método, la auditoría de coherencia (p0=p1=0.5, H=1.0) verifica que la entrada al modulador es estadísticamente óptima.</td>
-      </tr>
-    </tbody>
-  </table>
-  <div class="hint" style="margin-top: 12px;">
-    <strong>Tabla rápida de comparación BPSK vs QPSK:</strong>
-    <table style="margin-top: 8px;">
-      <thead><tr><th>Característica</th><th>BPSK</th><th>QPSK</th></tr></thead>
-      <tbody>
-        <tr><td>Bits por símbolo</td><td>1</td><td>2</td></tr>
-        <tr><td>Puntos en constelación</td><td>2 (±1 en eje I)</td><td>4 (±1, ±j)</td></tr>
-        <tr><td>Eficiencia espectral</td><td>1 bit/s/Hz</td><td>2 bit/s/Hz</td></tr>
-        <tr><td>Componente Q</td><td>≈ 0 (solo eje I)</td><td>Activa (datos en I y Q)</td></tr>
-        <tr><td>Diagrama de ojo (Q)</td><td>Plano en 0 ("ojo vacío")</td><td>Abierto igual que I</td></tr>
-        <tr><td>BER para igual Eb/N₀</td><td colspan="2" style="text-align:center">Idéntica: P_b = Q(√(2Eb/N₀)) — Sklar, Ec. 4.44. La ventaja de BPSK en distancia entre puntos se compensa porque QPSK distribuye la misma energía por bit en 2 dimensiones.</td></tr>
-        <tr><td>Aplicaciones típicas</td><td>Satélite bajo SNR, deep-space</td><td>DVB-S2, LTE, WiFi, cable</td></tr>
-      </tbody>
-    </table>
-  </div>
-  <div class="hint" style="margin-top: 12px;">
-    <strong>Tabla de comparación de roll-off α (QPSK, sps=8, span=8):</strong>
-    <table style="margin-top: 8px;">
-      <thead><tr><th>α</th><th>Espectro</th><th>Pulso RRC (tiempo)</th><th>Diagrama de ojo</th><th>Uso típico</th></tr></thead>
-      <tbody>
-        <tr><td>0.1</td><td>Muy angosto, bordes casi verticales</td><td>Colas largas, tarda en decaer</td><td>Estrecho, sensible a ISI</td><td>Máxima eficiencia espectral</td></tr>
-        <tr><td>0.25</td><td>Moderado, lóbulos suaves</td><td>Bien contenido</td><td>Equilibrado y limpio</td><td>LTE, DVB-S, QPSK satelital</td></tr>
-        <tr><td>0.5</td><td>Más ancho, transiciones suaves</td><td>Concentrado, colas cortas</td><td>Muy abierto</td><td>Robusto a jitter y desincronización</td></tr>
-        <tr><td>1.0</td><td>Ancho doble respecto a α=0</td><td>Muy compacto, casi sin colas</td><td>Totalmente abierto</td><td>Máxima robustez temporal, mínima eficiencia espectral</td></tr>
-      </tbody>
-    </table>
-  </div>
-</details>
-
-<details class="doc-guide" style="margin-top: 12px;">
-  <summary>Documentación técnica (Modulación)</summary>
-  <p class="intro">Esta sección describe el pipeline completo de modulación digital del Modulación: desde los bits del Formateo hasta la señal IQ lista para transmisión SDR. Cubre todos los entregables requeridos por la guía oficial.</p>
-
-  <div class="doc-grid">
-
-    <div class="doc-card">
-      <h4>1) Objetivo y contexto del Modulación</h4>
-      <p>El Modulación implementa la <strong>etapa de modulación y conformación espectral</strong> del transmisor digital. A partir de la secuencia binaria ecualizada del Formateo, se generan muestras IQ filtradas con un pulso de Nyquist tipo RRC, exportables a una SDR.</p>
-      <p>El pipeline completo integrado es:</p>
-      <ul>
-        <li><strong>Formateo → Modulación:</strong> bits_formateo.bin (alias bits_from_lab1.bin, P(0)≈P(1)≈0.5, H≈1) → mapeo a símbolos IQ → filtro RRC → iq.bin (float32 interleaved).</li>
-        <li>La señal iq.bin es compatible con GNU Radio, HackRF, USRP y cualquier SDR que acepte IQ en formato float32.</li>
-        <li>Esta implementación representa el <strong>bloque baseband transmisor</strong> de un sistema real, sin contemplar aún el efecto del canal.</li>
-      </ul>
-    </div>
-
-    <div class="doc-card">
-      <h4>2) Mapeo de bits a símbolos IQ</h4>
-      <p><strong>BPSK:</strong> cada bit se mapea a un punto en el eje real: bit 0 → símbolo −1+0j, bit 1 → símbolo +1+0j. La componente Q permanece en cero. Constelación: 2 puntos sobre el eje I.</p>
-      <p><strong>QPSK con codificación Gray:</strong> cada par de bits (b1, b2) se mapea a un punto en los 4 cuadrantes del plano complejo:</p>
-      <ul>
-        <li>00 → (+1+j)/√2 | 01 → (−1+j)/√2</li>
-        <li>10 → (+1−j)/√2 | 11 → (−1−j)/√2</li>
-      </ul>
-      <p>La codificación Gray garantiza que símbolos adyacentes en la constelación difieran en un solo bit, minimizando errores de bit cuando se confunde un símbolo con su vecino.</p>
-      <p>La normalización por √2 mantiene la potencia media del símbolo en 1 (E[|s|²] = 1), necesaria para que el cálculo de Eb/N0 en el Canal y Rx sea correcto.</p>
-    </div>
-
-    <div class="doc-card">
-      <h4>3) Filtro RRC: el pulso formador de onda</h4>
-      <p>El <strong>filtro Raíz de Coseno Alzado (Root Raised Cosine, RRC)</strong> es el pulso conformador estándar para comunicaciones digitales. Su función de transferencia en frecuencia es la raíz cuadrada del coseno alzado (RC):</p>
-      <p><code>H_RRC(f) = √H_RC(f)</code></p>
-      <p>La respuesta del coseno elevado (RC) en el tiempo es: <code>h_RC(t) = sinc(t/T)·cos(παt/T) / [1−(2αt/T)²]</code>. Esta es la respuesta del RC completo, no del RRC. El RRC no tiene forma cerrada analítica simple en el tiempo y se implementa numéricamente a partir de su respuesta en frecuencia.</p>
-      <p>donde T es el período de símbolo y α el factor de roll-off.</p>
-      <p><strong>¿Por qué usar RRC y no RC directamente?</strong> El filtro RRC se aplica tanto en el transmisor (Modulación) como en el receptor (Canal y Rx, filtro acoplado). La convolución de dos RRC iguales produce el RC completo, que satisface el criterio de Nyquist (ceros en t = nT para n≠0) → <strong>ISI = 0</strong> en los instantes de muestreo.</p>
-      <p>El ancho de banda unilateral en banda base es: <code>W = (1+α)·Rs/2 = (1+α)/(2T)</code> (Sklar, Ec. 3.81). En banda pasante DSB: <code>W_DSB = (1+α)·Rs</code>. El filtro RRC no tiene expresión cerrada simple en el tiempo; se obtiene como la raíz cuadrada en frecuencia del coseno elevado.</p>
-    </div>
-
-    <div class="doc-card">
-      <h4>4) Efecto del roll-off α sobre la señal</h4>
-      <p>El parámetro α (0 ≤ α ≤ 1) controla el exceso de ancho de banda respecto al mínimo de Nyquist:</p>
-      <ul>
-        <li><strong>α = 0:</strong> filtro de Nyquist ideal — banda mínima (B_T = 1/2T), pero el pulso es un sinc infinito en el tiempo (irrealizable en práctica).</li>
-        <li><strong>α = 0.25:</strong> compromiso estándar (LTE, DVB-S2) — banda moderada, pulso bien contenido, diagrama de ojo equilibrado.</li>
-        <li><strong>α = 0.5:</strong> más robusto al jitter — ojo muy abierto, mayor tolerancia a desincronización en muestreo.</li>
-        <li><strong>α = 1:</strong> máximo roll-off — banda doble respecto a α=0, pulso muy compacto (colas casi nulas), máxima apertura del ojo.</li>
-      </ul>
-      <p><strong>Interpretación del diagrama de ojo:</strong> el ojo se forma superponiendo trozos de la señal de duración 2T. Mayor apertura vertical → mayor margen de decisión → menor probabilidad de error ante ruido o jitter.</p>
-    </div>
-
-    <div class="doc-card">
-      <h4>5) Gráficas generadas y cómo interpretarlas</h4>
-      <p><strong>iq_time.png — Señal en el tiempo (I y Q):</strong> muestra las componentes en fase y cuadratura tras el filtro RRC. En BPSK, Q ≈ 0 (solo eje I activo). En QPSK, ambas componentes alternan entre ±1 con transiciones suaves.</p>
-      <p><strong>constellation.png — Diagrama de constelación:</strong> cada punto representa una muestra IQ. En el transmisor ideal (sin canal), los puntos deben agruparse en 2 (BPSK) o 4 (QPSK) nubes bien definidas. La dispersión circular indica muestras correctamente filtradas y normalizadas.</p>
-      <p><strong>spectrum.png — Espectro de potencia (Welch):</strong> muestra la distribución de energía en frecuencia. El perfil clásico del RRC tiene una "meseta" central y bordes de transición suaves cuyo ancho depende de α.</p>
-      <p><strong>rrc_impulse.png — Respuesta impulsiva del RRC:</strong> pico central en t=0 y lóbulos laterales simétricos que decaen. La asimetría o truncamiento visible indica el efecto del span.</p>
-      <p><strong>eye.png — Diagrama de ojo:</strong> el ojo abierto indica baja ISI. En BPSK, la componente Q tiene un ojo "vacío" (plano en 0). En QPSK, ambos ojos deben estar igualmente abiertos (ortogonalidad I/Q).</p>
-      <p><strong>bits_iq_transition.png:</strong> correlación entre el tren de bits del Formateo y la señal IQ resultante. Permite verificar el mapeo bit→símbolo→pulso transmitido.</p>
-      <p><strong>l1_bits_hist.png — Histograma de bits Formateo→Modulación:</strong> barras de 0 y 1 prácticamente iguales (p≈0.5) confirman que el scrambler del Formateo funciona correctamente y que la fuente es estadísticamente óptima para modulación.</p>
-    </div>
-
-    <div class="doc-card">
-      <h4>6) Exportación IQ y compatibilidad SDR</h4>
-      <p>La señal IQ se exporta en formato <strong>float32 interleaved</strong>: los valores se almacenan como [I₀, Q₀, I₁, Q₁, …, Iₙ, Qₙ] en un archivo binario (.bin).</p>
-      <p>Este formato es compatible con:</p>
-      <ul>
-        <li><strong>GNU Radio:</strong> bloque File Source con tipo complex float.</li>
-        <li><strong>HackRF One / USRP:</strong> transmisión directa mediante osmocom Sink o UHD.</li>
-        <li><strong>SDR#, GQRX:</strong> reproducción y análisis del espectro.</li>
-        <li><strong>Canal y Rx:</strong> carga directa con numpy.fromfile(dtype=np.complex64) o lectura de pares float32.</li>
-      </ul>
-      <p>El archivo <code>params.json</code> almacena todos los parámetros de la corrida (modulación, sps, α, span, seed, fuente Formateo), permitiendo reproducibilidad exacta y trazabilidad entre experimentos.</p>
-    </div>
-
-    <div class="doc-card">
-      <h4>7) Auditoría Formateo → Modulación</h4>
-      <p>La integración Formateo→Modulación incluye una auditoría automática de coherencia que verifica:</p>
-      <ul>
-        <li><strong>P(0), P(1), H:</strong> confirma que la fuente de bits es equiprobable (P≈0.5, H≈1.0) antes de modular.</li>
-        <li><strong>Hash MD5 de los archivos de entrada:</strong> garantiza que el archivo de audio/texto usado es el correcto y no fue modificado accidentalmente.</li>
-        <li><strong>Metadata de la señal:</strong> número de muestras, duración en segundos, fs utilizada.</li>
-        <li><strong>Preview del texto:</strong> muestra los primeros caracteres del archivo de texto para verificar la fuente.</li>
-      </ul>
-      <p>Si la auditoría reporta P(0) ≠ P(1) o H &lt; 0.99, revisar la configuración del scrambler en el Formateo (semilla, taps, bitwidth) y volver a ejecutar antes de proceder al Canal y Rx.</p>
-    </div>
-
-    <div class="doc-card">
-      <h4>8) Efecto de los parámetros sobre el criterio de Nyquist</h4>
-      <p>El <strong>criterio de Nyquist para transmisión libre de ISI</strong> requiere que la respuesta global del sistema (pulso transmisor × canal ideal × filtro receptor) tenga ceros en los instantes de muestreo t = nT para n ≠ 0.</p>
-      <p>Con el par de filtros RRC (transmisor + receptor del Canal y Rx):</p>
-      <ul>
-        <li>RRC_tx(f) × RRC_rx(f) = RC(f) → satisface el criterio de Nyquist en frecuencia.</li>
-        <li>El muestreo en los instantes óptimos (múltiplos de T) garantiza ISI = 0.</li>
-        <li>Cualquier error de sincronización temporal (timing offset) introduce ISI residual → el diagrama de ojo se "cierra".</li>
-      </ul>
-      <p>El parámetro span determina qué tan bien se aproxima el filtro truncado al RRC ideal: span grande → menor ISI residual, pero más costoso en cómputo y latencia.</p>
-    </div>
-
-    <div class="doc-card">
-      <h4>9) Discusión técnica y comparación BPSK vs QPSK</h4>
-      <p><strong>Integración Formateo→Modulación:</strong> la transferencia de bits ecualizados desde el formateo a la modulación garantiza una señal con propiedades estadísticas óptimas, minimizando correlaciones y maximizando la eficiencia espectral del sistema.</p>
-      <p><strong>Filtro RRC con α=0.25:</strong> representa el equilibrio entre ancho de banda (eficiencia espectral) y robustez frente al ISI. Es el valor más común en sistemas reales como LTE (3GPP TS 36.211) y DVB-S2 (ETSI EN 302 307).</p>
-      <p><strong>Scrambler LFSR [9,6]:</strong> se verificó que incrementa la entropía desde H≈0.88 (texto) hasta H≈0.9928, evitando repeticiones y garantizando una constelación con densidad uniforme en los 4 cuadrantes.</p>
-      <p><strong>Comparación BPSK vs QPSK a igual potencia:</strong></p>
-      <ul>
-        <li>BPSK: Q debería estar ≈0. El ojo de Q es "vacío" (plano en 0). Espectro: meseta central con caída suave.</li>
-        <li>QPSK: ambos I y Q activos, cada símbolo codifica 2 bits. La densidad de la constelación muestra 4 nubes de puntos en los 4 cuadrantes con distribución uniforme (gracias al scrambling del Formateo).</li>
-        <li>QPSK tiene la misma BER que BPSK cuando se expresa en función de Eb/N0, pero duplica la eficiencia espectral → mismo error, el doble de datos por unidad de ancho de banda.</li>
-      </ul>
-    </div>
-  </div>
-</details>
-
-<p class="muted">α pequeño reduce el ancho de banda pero alarga colas del pulso; α grande ensancha espectro y reduce
-  colas (trade-off BW/ISI).</p>
-<h3>Resultados</h3>
-<div id="zip-results"></div>
+<!-- ─── Resultados ─── -->
+<div id="zip-results" style="margin-top: 14px;"></div>
+<h3 id="formateo-header" style="display:none; margin-top: 16px;">Etapa de Formateo</h3>
 <div id="formateo-results"></div>
+<h3 id="mod-header" style="display:none; margin-top: 16px;">Etapa de Modulación</h3>
 <div id="api-results"></div>
-<h3>Auditoría (Formateo → Modulación)</h3>
+<h3 id="audit-header" style="display:none; margin-top: 8px;">Auditoría Formateo → Modulación</h3>
 <div id="api-audit" class="muted"></div>
+
 <script>
-  function presetLab2() {
-    const n = document.querySelector('input[name="bits_len"]');
-    const sps = document.querySelector('input[name="sps"]');
-    const a = document.querySelector('input[name="alpha"]');
-    const span = document.querySelector('input[name="span_symbols"]');
-    const mod = document.querySelector('select[name="modulation"]');
-    if (n) n.value = 2000;
-    if (sps) sps.value = 8;
-    if (a) a.value = 0.25;
-    if (span) span.value = 8;
-    if (mod) mod.value = 'QPSK';
+  /* ── helpers localStorage ── */
+  function lsGet(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { } }
+  function normalizeOutputBase(path) {
+    if (!path) return path;
+    let p = String(path).replace(/\/+$/, '');
+    const tsRe = /^\d{8}_\d{6}$/;
+    let parts = p.split('/');
+    while (parts.length && tsRe.test(parts[parts.length - 1])) {
+      parts.pop();
+    }
+    const normalized = parts.join('/');
+    return normalized || path;
   }
-  function quickAlpha(val) {
-    const a = document.querySelector('input[name="alpha"]');
-    if (a) a.value = val;
-  }
+
+  /* ── leer formulario de Modulación ── */
   function getFormVals() {
-    const out = document.querySelector('input[name="out"]').value;
-    const modulation = document.querySelector('select[name="modulation"]').value;
-    const bits_len = parseInt(document.querySelector('input[name="bits_len"]').value || '2000', 10);
-    const sps = parseInt(document.querySelector('input[name="sps"]').value || '8', 10);
-    const alpha = parseFloat(document.querySelector('input[name="alpha"]').value || '0.25');
-    const span = parseInt(document.querySelector('input[name="span_symbols"]').value || '8', 10);
-    const seed = parseInt(document.querySelector('input[name="seed"]').value || '0', 10);
-    return { out_dir: out, modulation, n_bits: bits_len, sps, rolloff: alpha, span, seed };
+    return {
+      modulation: document.getElementById('mod_modulation').value,
+      sps: parseInt(document.getElementById('mod_sps').value || '8', 10),
+      n_bits: 2000,
+      alpha: parseFloat(document.getElementById('mod_alpha').value || '0.25'),
+      span: parseInt(document.getElementById('mod_span').value || '8', 10),
+      out: normalizeOutputBase(document.getElementById('mod_out').value),
+    };
   }
-  async function runApiLab2() {
+  function saveLab2ToLS() { lsSet('lab2_params', getFormVals()); }
+  function loadLab2FromLS() {
+    const v = lsGet('lab2_params', null);
+    if (!v) return;
+    if (v.modulation != null) document.getElementById('mod_modulation').value = v.modulation;
+    if (v.sps != null) document.getElementById('mod_sps').value = v.sps;
+    if (v.alpha != null) document.getElementById('mod_alpha').value = v.alpha;
+    if (v.span != null) document.getElementById('mod_span').value = v.span;
+    if (v.out != null) document.getElementById('mod_out').value = normalizeOutputBase(v.out);
+  }
+
+  function updateAlphaHint() {
+    const el = document.getElementById('mod_alpha');
+    const hint = document.getElementById('mod_alpha_hint');
+    if (!el || !hint) return;
+    const alpha = parseFloat(el.value || '0.25');
+    const a = Number.isFinite(alpha) ? alpha : 0.25;
+    let comment = '';
+    if (a <= 0.1) {
+      comment = `α=${a.toFixed(2)} → mínima ocupación espectral, pero mayor sensibilidad a errores de temporización.`;
+    } else if (a <= 0.35) {
+      comment = `α=${a.toFixed(2)} → compromiso intermedio entre eficiencia espectral y robustez temporal.`;
+    } else if (a < 1.0) {
+      comment = `α=${a.toFixed(2)} → mayor ancho de banda, pero menor ISI residual y menor sensibilidad al desajuste temporal.`;
+    } else {
+      comment = `α=${a.toFixed(2)} → máximo exceso de ancho de banda y mayor robustez temporal.`;
+    }
+    hint.textContent = `Exceso de BW: BW = (1+α)·Rs/2. ${comment}`;
+  }
+
+  /* ── leer formulario de Formateo ── */
+  function getLab1Vals() {
+    return {
+      audio: document.getElementById('l1_audio').value,
+      text: document.getElementById('l1_text').value,
+      fs: parseInt(document.getElementById('l1_fs').value || '16000', 10),
+      n_bits: parseInt(document.getElementById('l1_nbits').value || '8', 10),
+      quantizer: document.getElementById('l1_quant').value,
+      source: document.getElementById('l1_source').value,
+      method: 'scrambling',
+      lfsr_seed: '0b1010110011',
+      lfsr_taps: '9,6',
+      lfsr_bitwidth: 10,
+    };
+  }
+  function saveLab1ToLS() { lsSet('lab1_params', getLab1Vals()); }
+  function loadLab1FromLS() {
+    const v = lsGet('lab1_params', null);
+    if (!v) return;
+    if (v.audio != null) document.getElementById('l1_audio').value = v.audio;
+    if (v.text != null) document.getElementById('l1_text').value = v.text;
+    if (v.fs != null) document.getElementById('l1_fs').value = v.fs;
+    if (v.n_bits != null) document.getElementById('l1_nbits').value = v.n_bits;
+    if (v.quantizer != null) document.getElementById('l1_quant').value = v.quantizer;
+    if (v.source != null) document.getElementById('l1_source').value = v.source;
+  }
+
+  /* ── ejecutar simulación completa ── */
+  async function runApiLab2FromLab1() {
     showOverlay();
     try {
-      const payload = getFormVals();
-      const r = await fetch('/api/lab2/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const l2 = getFormVals();
+      const l1 = getLab1Vals();
+      saveLab1ToLS();
+      saveLab2ToLS();
+      const payload = { ...l2, lab1: l1 };
+      addFlash('info', `Iniciando simulación Modulación con bits de Formateo... (Fuente: ${l1.source})`);
+      const r = await fetch('/api/lab2/run_from_lab1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
       const j = await r.json();
       if (!j.ok) { throw new Error(j.error || 'Error desconocido'); }
+      saveLab2ToLS();
+      if (j.formateo) { renderFormateoResults(j.formateo, l1.source); }
       renderLab2Results(j.paths, j.audit, j.out);
-      addFlash('warning', 'Corrida completada (API).');
+      addFlash('success', '¡Éxito! Simulación Formateo → Modulación completada.');
     } catch (e) {
       addFlash('error', String(e));
-    } finally { hideOverlay(); }
+    } finally {
+      hideOverlay();
+    }
   }
-  async function quickExampleLab2() {
-    showOverlay();
-    try {
-      const payload = { out_dir: '{{ defaults.out_lab2 }}', modulation: 'QPSK', n_bits: 2000, sps: 8, rolloff: 0.25, span: 8, seed: 0 };
-      const r = await fetch('/api/lab2/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      const j = await r.json();
-      if (!j.ok) { throw new Error(j.error || 'Error desconocido'); }
-      renderLab2Results(j.paths, j.audit, j.out);
-      addFlash('warning', 'Ejemplo rápido generado.');
-    } catch (e) { addFlash('error', String(e)); }
-    finally { hideOverlay(); }
-  }
-    function renderFormateoResults(payload, source) {
-    const c = document.getElementById('formateo-results');
-    if (!c || !payload) return;
-    let html = '<h3>Etapa de Formateo (encadenado)</h3>';
-    if (payload.out) { html += `<div class="muted">Directorio: <code>${payload.out}</code></div>`; }
 
+  /* ── renderizado de resultados ── */
+  function renderFormateoResults(payload, source) {
+    const c = document.getElementById('formateo-results');
+    const h = document.getElementById('formateo-header');
+    if (!c || !payload) return;
+    h && (h.style.display = '');
     const src = (source || '').toLowerCase();
-    const keepAll = (src === '' || src === 'concat' || src === 'separate');
     const keepAudio = (src === 'audio');
     const keepText = (src === 'text');
-
     function allowFig(f) {
       const name = f.split('/').slice(-1)[0];
-      if (keepAll) return true;
-      if (keepAudio) {
-        return name.startsWith('A_') || name === 'sqnr_comparacion.png' || name === 'mse_comparacion.png';
-      }
-      if (keepText) {
-        return name.startsWith('B_');
-      }
+      if (keepAudio) return name.startsWith('A_') || name === 'sqnr_comparacion.png' || name === 'mse_comparacion.png';
+      if (keepText) return name.startsWith('B_');
       return true;
     }
-
     const figs = (payload.figs || []).filter(allowFig);
+    const bust = Date.now();
+    let html = '';
+    if (payload.out) html += `<div class="muted" style="margin-bottom:8px;">Directorio: <code>${payload.out}</code></div>`;
     if (figs.length) {
       html += '<div class="figs">';
       for (const f of figs) {
-        html += `<div><img src="/api/files?path=${f}"/><div class="muted">${f.split('/').slice(-1)[0]}</div></div>`;
+        html += `<div><img src="/api/files?path=${f}&v=${bust}"/><div class="muted">${f.split('/').slice(-1)[0]}</div></div>`;
       }
       html += '</div>';
-    } else {
-      html += '<div class="muted">(Sin figuras de Formateo)</div>';
     }
     c.innerHTML = html;
   }
-
 
   function renderZipLink(out) {
     const c = document.getElementById('zip-results');
     if (!c) return;
     if (!out) { c.innerHTML = ''; return; }
-    const safe = String(out).replace(/'/g, "\'");
+    const safe = String(out).replace(/'/g, "\\'");
     c.innerHTML = `<button class="btn secondary" type="button" onclick="downloadZip('${safe}')">Descargar ZIP completo</button>`;
   }
 
-
   function buildLab2ResultsHtml(paths) {
     const imgs = ['iq_time_png', 'constellation_png', 'spectrum_png', 'rrc_impulse_png', 'eye_png', 'bits_iq_transition_png'];
-    let html = '';
-    html += '<div class="figs">';
-    for (const k of imgs) { if (paths[k]) { html += `<div><img src="/api/files?path=${paths[k]}"/><div class="muted">${k.replace('_png', '')}.png</div></div>`; } }
-    if (paths['l1_bits_hist']) { html += `<div><img src="/api/files?path=${paths['l1_bits_hist']}"/><div class="muted">l1_bits_hist.png</div></div>`; }
+    const bust = Date.now();
+    let html = '<div class="figs">';
+    for (const k of imgs) {
+      if (paths[k]) html += `<div><img src="/api/files?path=${paths[k]}&v=${bust}"/><div class="muted">${k.replace('_png', '')}.png</div></div>`;
+    }
+    if (paths['l1_bits_hist']) html += `<div><img src="/api/files?path=${paths['l1_bits_hist']}&v=${bust}"/><div class="muted">l1_bits_hist.png</div></div>`;
+    if (paths['rrc_discrete_upsampling_png']) html += `<div><img src="/api/files?path=${paths['rrc_discrete_upsampling_png']}&v=${bust}"/><div class="muted">rrc_discrete_upsampling.png</div></div>`;
+    if (paths['rrc_discrete_shaping_png']) html += `<div><img src="/api/files?path=${paths['rrc_discrete_shaping_png']}&v=${bust}"/><div class="muted">rrc_discrete_shaping.png</div></div>`;
+    if (paths['rrc_two_symbols_png']) html += `<div><img src="/api/files?path=${paths['rrc_two_symbols_png']}&v=${bust}"/><div class="muted">rrc_two_symbols.png</div></div>`;
     html += '</div>';
     html += '<h4>Archivos</h4><ul>';
     if (paths['iq_bin']) html += `<li><a href="/api/files?path=${paths['iq_bin']}">iq.bin</a></li>`;
@@ -492,165 +362,88 @@
     const text = audit.text || null;
     let ah = '<ul>';
     ah += `<li>Bits: count=${b.count} p0=${(b.p0 || 0).toFixed(3)} p1=${(b.p1 || 0).toFixed(3)} H=${(b.H || 0).toFixed(3)}</li>`;
-    if (audio) { ah += `<li>Audio: ${audio.path} (md5 ${audio.md5 || ''}) muestras=${audio.samples} dur=${(audio.duration_s || 0).toFixed(2)}s fs=${audio.fs_target}</li>`; }
-    if (text) { ah += `<li>Texto: ${text.path} (md5 ${text.md5 || ''}) bytes=${text.bytes} preview="${(text.preview || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}"</li>`; }
+    if (audio) ah += `<li>Audio: ${audio.path} — muestras=${audio.samples} dur=${(audio.duration_s || 0).toFixed(2)}s fs=${audio.fs_target}</li>`;
+    if (text) ah += `<li>Texto: ${text.path} — bytes=${text.bytes} preview="${(text.preview || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}"</li>`;
     ah += '</ul>';
     return ah;
   }
 
   function renderLab2Results(paths, audit, out) {
     const c = document.getElementById('api-results');
+    const h = document.getElementById('mod-header');
+    const ah = document.getElementById('audit-header');
     if (!c) return;
+    h && (h.style.display = '');
     renderZipLink(out);
     c.innerHTML = buildLab2ResultsHtml(paths || {});
     const a = document.getElementById('api-audit');
-    if (a) a.innerHTML = buildLab2AuditHtml(audit);
-  }
-
-  function renderLab2ResultsMulti(runs, out) {
-    const c = document.getElementById('api-results');
-    if (!c) return;
-    renderZipLink(out);
-    let html = '';
-    let auditHtml = '';
-
-    function prettyLabel(key) {
-      const raw = String(key || '');
-      const k = raw.toLowerCase();
-      const map = {
-        'audio/scrambling': 'Etapa de Modulación de Audio con EQ Scrambler',
-        'text/scrambling': 'Etapa de Modulación de Texto con EQ Scrambler',
-        'audio_scrambling': 'Etapa de Modulación de Audio con EQ Scrambler',
-        'text_scrambling': 'Etapa de Modulación de Texto con EQ Scrambler'
-      };
-      return map[k] || raw.replace(/_/g, ' ');
-    }
-    function orderedKeys(obj) {
-      const pref = ['audio/scrambling', 'text/scrambling', 'audio_scrambling', 'text_scrambling'];
-      const keys = Object.keys(obj || {});
-      const set = new Set(keys);
-      const ordered = [];
-      for (const k of pref) {
-        if (set.has(k)) { ordered.push(k); set.delete(k); }
+    if (a) {
+      const auditHtml = buildLab2AuditHtml(audit);
+      if (auditHtml) {
+        ah && (ah.style.display = '');
+        a.innerHTML = auditHtml;
       }
-      const rest = Array.from(set);
-      rest.sort();
-      return ordered.concat(rest);
     }
-
-    const keys = orderedKeys(runs || {});
-    for (const key of keys) {
-      const run = runs[key] || {};
-      const label = prettyLabel(key);
-      html += `<h4>${label}</h4>` + buildLab2ResultsHtml(run.paths || {});
-      const ah = buildLab2AuditHtml(run.audit || {});
-      if (ah) auditHtml += `<h4>${label}</h4>` + ah;
-    }
-    c.innerHTML = html;
-    const a = document.getElementById('api-audit');
-    if (a) a.innerHTML = auditHtml;
   }
 
-  function getLab1Vals() {
-    return {
-      audio: document.getElementById('l1_audio').value,
-      text: document.getElementById('l1_text').value,
-      fs: parseInt(document.getElementById('l1_fs').value || '16000', 10),
-      n_bits: parseInt(document.getElementById('l1_nbits').value || '8', 10),
-      quantizer: document.getElementById('l1_quant').value,
-      source: document.getElementById('l1_source').value,
-      method: document.getElementById('l1_method').value,
-      mu: parseInt(document.getElementById('l1_mu').value || '255', 10),
-      lfsr_seed: document.getElementById('l1_lfsr_seed').value,
-      lfsr_taps: document.getElementById('l1_lfsr_taps').value,
-      lfsr_bitwidth: parseInt(document.getElementById('l1_lfsr_bitwidth').value || '10', 10),
-    };
-  }
-  function setLab1Vals(v) {
-    if (!v) return;
-    if (v.audio != null) document.getElementById('l1_audio').value = v.audio;
-    if (v.text != null) document.getElementById('l1_text').value = v.text;
-    if (v.fs != null) document.getElementById('l1_fs').value = v.fs;
-    if (v.n_bits != null) document.getElementById('l1_nbits').value = v.n_bits;
-    if (v.quantizer != null) document.getElementById('l1_quant').value = v.quantizer;
-    if (v.source != null) document.getElementById('l1_source').value = v.source;
-    if (v.method != null) document.getElementById('l1_method').value = v.method;
-    if (v.mu != null) document.getElementById('l1_mu').value = v.mu;
-    if (v.lfsr_seed != null) document.getElementById('l1_lfsr_seed').value = v.lfsr_seed;
-    if (v.lfsr_taps != null) document.getElementById('l1_lfsr_taps').value = v.lfsr_taps;
-    if (v.lfsr_bitwidth != null) document.getElementById('l1_lfsr_bitwidth').value = v.lfsr_bitwidth;
-  }
-  function presetSource(src) {
-    const sel = document.getElementById('l1_source');
-    sel.value = src;
-    saveLab1ToLS();
-    addFlash('warning', `Fuente de bits: ${src}`);
-  }
-  function lsGet(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }
-  function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { } }
-  function saveLab1ToLS() { lsSet('lab1_params', getLab1Vals()); }
-  function loadLab1FromLS() { const v = lsGet('lab1_params', null); if (v) setLab1Vals(v); }
-  async function runApiLab2FromLab1() {
-    showOverlay();
+  async function openInputFolder(inputId) {
+    const el = document.getElementById(inputId);
+    if (!el || !el.value) return;
     try {
-      const l2 = getFormVals();
-      const l1 = getLab1Vals();
-      saveLab1ToLS();
-      saveLab2ToLS();
-      const payload = { ...l2, lab1: l1 };
-      addFlash('info', `Iniciando simulación Modulación con bits de Formateo... (Fuente: ${l1.source})`);
-      const r = await fetch('/api/lab2/run_from_lab1', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      const j = await r.json();
-      if (!j.ok) { throw new Error(j.error || 'Error desconocido'); }
-      if (j.out) {
-        const currentParams = getFormVals();
-        currentParams.out = j.out;
-        lsSet('lab2_params', currentParams);
+      const res = await fetch('/api/open_folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: el.value })
+      });
+      const j = await res.json();
+      if (!j.ok) {
+        addFlash('error', j.error || 'No se pudo abrir la carpeta.');
       }
-      if (j.formateo) { renderFormateoResults(j.formateo, l1.source); }
-      if (j.runs) {
-        renderLab2ResultsMulti(j.runs, j.out);
-      } else {
-        renderLab2Results(j.paths, j.audit, j.out);
-      }
-      addFlash('success', `¡Éxito! Simulación Modulación Completada usando bits de Formateo.`);
-    } catch (e) { addFlash('error', String(e)); }
-    finally { hideOverlay(); }
-  }
-  function getFormVals() {
-    return {
-      modulation: document.querySelector('select[name="modulation"]').value,
-      sps: parseInt(document.querySelector('input[name="sps"]').value),
-      n_bits: parseInt(document.querySelector('input[name="bits_len"]').value),
-      alpha: parseFloat(document.querySelector('input[name="alpha"]').value),
-      span: parseInt(document.querySelector('input[name="span_symbols"]').value),
-      seed: parseInt(document.querySelector('input[name="seed"]').value),
-      out: document.querySelector('input[name="out"]').value
-    };
-  }
-  function saveLab2ToLS() { lsSet('lab2_params', getFormVals()); }
-  function loadLab2FromLS() {
-    const v = lsGet('lab2_params', null);
-    if (v) {
-      if (v.modulation) document.querySelector('select[name="modulation"]').value = v.modulation;
-      if (v.sps) document.querySelector('input[name="sps"]').value = v.sps;
-      if (v.n_bits) document.querySelector('input[name="bits_len"]').value = v.n_bits;
-      if (v.alpha) document.querySelector('input[name="alpha"]').value = v.alpha;
-      if (v.span) document.querySelector('input[name="span_symbols"]').value = v.span;
-      if (v.seed) document.querySelector('input[name="seed"]').value = v.seed;
-      if (v.out) document.querySelector('input[name="out"]').value = v.out;
+    } catch (e) {
+      addFlash('error', 'No se pudo abrir la carpeta.');
     }
   }
 
+  async function pickSourceFile(inputId, kind) {
+    const el = document.getElementById(inputId);
+    if (!el) return;
+    try {
+      const res = await fetch('/api/pick_file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: el.value, kind })
+      });
+      const j = await res.json();
+      if (j.ok && j.path) {
+        el.value = j.path;
+        saveLab1ToLS();
+        return;
+      }
+      if (!j.canceled) {
+        addFlash('error', j.error || 'No se pudo seleccionar el archivo.');
+      }
+    } catch (e) {
+      addFlash('error', 'No se pudo seleccionar el archivo.');
+    }
+  }
+
+  /* ── init ── */
   window.addEventListener('DOMContentLoaded', () => {
     loadLab1FromLS();
     loadLab2FromLS();
-    ['l1_audio', 'l1_text', 'l1_fs', 'l1_nbits', 'l1_quant', 'l1_source', 'l1_method', 'l1_mu', 'l1_lfsr_seed', 'l1_lfsr_taps', 'l1_lfsr_bitwidth'].forEach(id => {
+    updateAlphaHint();
+    ['mod_modulation', 'mod_sps', 'mod_alpha', 'mod_span', 'mod_out'].forEach(id => {
       const el = document.getElementById(id);
-      if (el) { el.addEventListener('change', saveLab1ToLS); }
+      if (el) el.addEventListener('change', saveLab2ToLS);
     });
-    document.querySelectorAll('form input, form select').forEach(el => {
-      el.addEventListener('change', saveLab2ToLS);
+    const alphaEl = document.getElementById('mod_alpha');
+    if (alphaEl) {
+      alphaEl.addEventListener('change', updateAlphaHint);
+      alphaEl.addEventListener('input', updateAlphaHint);
+    }
+    ['l1_audio', 'l1_text', 'l1_fs', 'l1_nbits', 'l1_quant', 'l1_source'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('change', saveLab1ToLS);
     });
   });
 </script>

@@ -1,4 +1,5 @@
 import os
+import json
 import pandas as pd
 
 
@@ -14,13 +15,27 @@ def _md_table_from_df(df: pd.DataFrame) -> str:
 
 def write_markdown(out_dir: str):
     fig = os.path.join(out_dir, "figures")
+    params_path = os.path.join(out_dir, "params.json")
+    params = {}
+    if os.path.exists(params_path):
+        try:
+            with open(params_path, "r", encoding="utf-8") as f:
+                params = json.load(f)
+        except Exception:
+            params = {}
 
-    # Detectar variantes de figuras de audio (mulaw/uniform)
+    source = (params.get("source") or "audio").lower()
+    quantizer = (params.get("quantizer") or "alaw").lower()
+    quantizer_label = "A-law" if quantizer == "alaw" else "Uniforme"
+
+    # Detectar variantes de figuras de audio (A-law principal o uniforme como comparación)
     def pick(name_base: str):
         # Retorna el path relativo a figures/ si existe alguna variante conocida
+        preferred = f"{name_base}_{quantizer}.png"
+        fallback = "uniform" if quantizer == "alaw" else "alaw"
         candidates = [
-            f"{name_base}_mulaw.png",
-            f"{name_base}_uniform.png",
+            preferred,
+            f"{name_base}_{fallback}.png",
             f"{name_base}.png",
         ]
         for c in candidates:
@@ -32,6 +47,10 @@ def write_markdown(out_dir: str):
     a_scr = pick("A_bits_hist_scrambled") or "figures/A_bits_hist_scrambled.png"
     a_cmp = pick("A_bits_hist_compare")
     a_ent = pick("A_entropy_evolution")
+    a_sig_cmp = pick("A_signal_quantized_compare")
+    a_qchar = pick("A_quantizer_characteristic")
+    a_low_cmp = "figures/A_quantizer_low_level_compare.png" if os.path.exists(os.path.join(fig, "A_quantizer_low_level_compare.png")) else None
+    a_err_cmp = "figures/A_quantization_error_compare.png" if os.path.exists(os.path.join(fig, "A_quantization_error_compare.png")) else None
 
     b_before = "figures/B_bits_hist_before.png"
     b_scr = "figures/B_bits_hist_scrambled.png"
@@ -49,50 +68,69 @@ def write_markdown(out_dir: str):
             metrics_md = None
 
     parts = []
-    parts.append("# Formateo – Formateo & Ecualización del Histograma")
+    parts.append("# Formateo – Cuantización y Scrambling")
 
-    parts.append("\n## 1) Señal original (audio)")
-    parts.append("![A_signal_time](figures/A_signal_time.png)")
-    parts.append("![A_signal_hist](figures/A_signal_hist.png)")
+    if source == "audio":
+        parts.append("\n## 1) Señal original (audio)")
+        parts.append("![A_signal_time](figures/A_signal_time.png)")
+        parts.append("![A_signal_hist](figures/A_signal_hist.png)")
 
-    parts.append("\n## 2) Histogramas de bits (antes)")
-    parts.append(f"- Audio: ![A_bits_before]({a_before})")
-    parts.append(f"- Texto: ![B_bits_before]({b_before})")
+        parts.append(f"\n## 2) Histogramas de bits (antes) [{quantizer_label}]")
+        parts.append(f"![A_bits_before]({a_before})")
 
-    parts.append("\n## 3) Scrambling (PRBS con LFSR)")
-    parts.append(f"- Audio: ![A_bits_scram]({a_scr})")
-    parts.append(f"- Texto: ![B_bits_scram]({b_scr})")
+        parts.append("\n## 3) Scrambling (PRBS con LFSR)")
+        parts.append(f"![A_bits_scram]({a_scr})")
+    else:
+        parts.append("\n## 1) Fuente original (texto)")
+        parts.append(f"![B_bits_before]({b_before})")
+
+        parts.append("\n## 2) Scrambling (PRBS con LFSR)")
+        parts.append(f"![B_bits_scram]({b_scr})")
 
     # Comparativas y evolución de entropía (si existen)
     comp_blocks = []
-    if a_cmp:
-        comp_blocks.append(f"- Audio: ![A_bits_compare]({a_cmp})")
-    if os.path.exists(os.path.join(out_dir, b_cmp)):
-        comp_blocks.append(f"- Texto: ![B_bits_compare]({b_cmp})")
+    if source == "audio" and a_cmp:
+        comp_blocks.append(f"![A_bits_compare]({a_cmp})")
+    if source == "text" and os.path.exists(os.path.join(out_dir, b_cmp)):
+        comp_blocks.append(f"![B_bits_compare]({b_cmp})")
     if comp_blocks:
         parts.append("\n## 4) Histogramas comparativos (Antes vs Scrambling)")
         parts.extend(comp_blocks)
 
     ent_blocks = []
-    if a_ent:
-        ent_blocks.append(f"- Audio: ![A_entropy]({a_ent})")
-    if os.path.exists(os.path.join(out_dir, b_ent)):
-        ent_blocks.append(f"- Texto: ![B_entropy]({b_ent})")
+    if source == "audio" and a_ent:
+        ent_blocks.append(f"![A_entropy]({a_ent})")
+    if source == "text" and os.path.exists(os.path.join(out_dir, b_ent)):
+        ent_blocks.append(f"![B_entropy]({b_ent})")
     if ent_blocks:
         parts.append("\n## 5) Evolución de la entropía (original + scrambler)")
         parts.extend(ent_blocks)
+
+    if source == "audio":
+        qviz_blocks = []
+        if a_sig_cmp:
+            qviz_blocks.append(f"![A_sig_q]({a_sig_cmp})")
+        if a_qchar:
+            qviz_blocks.append(f"![A_q_char]({a_qchar})")
+        if a_low_cmp:
+            qviz_blocks.append(f"![A_low_cmp]({a_low_cmp})")
+        if a_err_cmp:
+            qviz_blocks.append(f"![A_err_cmp]({a_err_cmp})")
+        if qviz_blocks:
+            parts.append(f"\n## 6) Visualización de la cuantización [{quantizer_label}]")
+            parts.extend(qviz_blocks)
 
     # SQNR/MSE si existen
     sqnr_png = os.path.join(out_dir, "sqnr_comparacion.png")
     mse_png = os.path.join(out_dir, "mse_comparacion.png")
     if os.path.exists(sqnr_png) or os.path.exists(mse_png):
-        parts.append("\n## 6) Métricas adicionales de cuantización")
-        if os.path.exists(sqnr_png):
+        parts.append(f"\n## 7) Métricas adicionales de cuantización [{quantizer_label}]")
+        if source == "audio" and os.path.exists(sqnr_png):
             parts.append("![SQNR](sqnr_comparacion.png)")
-        if os.path.exists(mse_png):
+        if source == "audio" and os.path.exists(mse_png):
             parts.append("![MSE](mse_comparacion.png)")
 
-    parts.append("\n## 7) Métricas (tabla)")
+    parts.append("\n## 8) Métricas (tabla)")
     if metrics_md:
         parts.append(metrics_md)
     else:
@@ -102,7 +140,7 @@ def write_markdown(out_dir: str):
     parts.append("- Scrambling: busca equiprobabilidad P(0)≈P(1) sin cambiar la tasa.")
 
     # Sección para discusión crítica (para completar manualmente)
-    parts.append("\n## 8) Discusión (para completar)")
+    parts.append("\n## 9) Discusión (para completar)")
     parts.append("- Ventajas/desventajas de las técnicas aplicadas.")
     parts.append("- Propuestas de mejora y aplicaciones.")
 
@@ -144,9 +182,23 @@ def write_pdf(out_dir: str):
         return
 
     figdir = os.path.join(out_dir, "figures")
+    params_path = os.path.join(out_dir, "params.json")
+    params = {}
+    if os.path.exists(params_path):
+        try:
+            with open(params_path, "r", encoding="utf-8") as f:
+                params = json.load(f)
+        except Exception:
+            params = {}
+
+    source = (params.get("source") or "audio").lower()
+    quantizer = (params.get("quantizer") or "alaw").lower()
+    quantizer_label = "A-law" if quantizer == "alaw" else "Uniforme"
 
     def pick(name_base: str):
-        for c in [f"{name_base}_mulaw.png", f"{name_base}_uniform.png", f"{name_base}.png"]:
+        preferred = f"{name_base}_{quantizer}.png"
+        fallback = "uniform" if quantizer == "alaw" else "alaw"
+        for c in [preferred, f"{name_base}_{fallback}.png", f"{name_base}.png"]:
             p = os.path.join(figdir, c)
             if os.path.exists(p):
                 return p
@@ -157,7 +209,7 @@ def write_pdf(out_dir: str):
     styles = getSampleStyleSheet()
     story = []
 
-    story.append(Paragraph("Formateo – Formateo & Ecualización del Histograma", styles['Title']))
+    story.append(Paragraph("Formateo – Cuantización y Scrambling", styles['Title']))
     story.append(Spacer(1, 6*mm))
 
     def add_img(path: str, caption: str):
@@ -172,27 +224,24 @@ def write_pdf(out_dir: str):
         story.append(Paragraph(caption, styles['Normal']))
         story.append(Spacer(1, 4*mm))
 
-    # 1) Señal original
-    add_img(os.path.join(figdir, "A_signal_time.png"), "Señal en el tiempo (audio)")
-    add_img(os.path.join(figdir, "A_signal_hist.png"), "Histograma de amplitudes (audio)")
-
-    # 2) Histogramas de bits
-    add_img(pick("A_bits_hist_before"), "Histogramas de bits – Audio (antes)")
-    add_img(os.path.join(figdir, "B_bits_hist_before.png"), "Histogramas de bits – Texto (antes)")
-
-    # 3) Scrambling
-    add_img(pick("A_bits_hist_scrambled"), "Histogramas de bits – Audio (scrambling)")
-    add_img(os.path.join(figdir, "B_bits_hist_scrambled.png"), "Histogramas de bits – Texto (scrambling)")
-
-    # 4) Comparativas y entropía
-    add_img(pick("A_bits_hist_compare"), "Comparativa Antes vs Scrambling – Audio")
-    add_img(os.path.join(figdir, "B_bits_hist_compare.png"), "Comparativa Antes vs Scrambling – Texto")
-    add_img(pick("A_entropy_evolution"), "Evolución de la entropía – Audio (original + scrambler)")
-    add_img(os.path.join(figdir, "B_entropy_evolution.png"), "Evolución de la entropía – Texto (original + scrambler)")
-
-    # 5) Métricas de cuantización
-    add_img(os.path.join(out_dir, "sqnr_comparacion.png"), "Comparación de SQNR (dB)")
-    add_img(os.path.join(out_dir, "mse_comparacion.png"), "Comparación de MSE")
+    if source == "audio":
+        add_img(os.path.join(figdir, "A_signal_time.png"), "Señal en el tiempo (audio)")
+        add_img(os.path.join(figdir, "A_signal_hist.png"), "Histograma de amplitudes (audio)")
+        add_img(pick("A_bits_hist_before"), f"Histogramas de bits – Audio (antes, {quantizer_label})")
+        add_img(pick("A_bits_hist_scrambled"), f"Histogramas de bits – Audio (scrambling, {quantizer_label})")
+        add_img(pick("A_bits_hist_compare"), "Comparativa Antes vs Scrambling – Audio")
+        add_img(pick("A_entropy_evolution"), "Evolución de la entropía – Audio (original + scrambler)")
+        add_img(pick("A_signal_quantized_compare"), f"Señal original vs reconstruida – {quantizer_label}")
+        add_img(pick("A_quantizer_characteristic"), f"Característica entrada/salida – {quantizer_label}")
+        add_img(os.path.join(figdir, "A_quantizer_low_level_compare.png"), "Comparación uniforme vs A-law en tramo de baja amplitud")
+        add_img(os.path.join(figdir, "A_quantization_error_compare.png"), "Comparación del error de cuantización")
+        add_img(os.path.join(out_dir, "sqnr_comparacion.png"), "Comparación de SQNR (dB)")
+        add_img(os.path.join(out_dir, "mse_comparacion.png"), "Comparación de MSE")
+    else:
+        add_img(os.path.join(figdir, "B_bits_hist_before.png"), "Histogramas de bits – Texto (antes)")
+        add_img(os.path.join(figdir, "B_bits_hist_scrambled.png"), "Histogramas de bits – Texto (scrambling)")
+        add_img(os.path.join(figdir, "B_bits_hist_compare.png"), "Comparativa Antes vs Scrambling – Texto")
+        add_img(os.path.join(figdir, "B_entropy_evolution.png"), "Evolución de la entropía – Texto (original + scrambler)")
 
     # 6) Tabla de métricas
     metrics_path = os.path.join(out_dir, "resumen_metricas.csv")
