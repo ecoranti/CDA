@@ -1,12 +1,15 @@
 {% extends 'base.html' %}
 {% block content %}
-  <h2>Resultados Modulación</h2>
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+    <h2 style="margin:0;">Resultados Modulación</h2>
+    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+      <button class="btn" type="button" onclick="openResultsFolder('{{ out }}')">Abrir carpeta de resultados</button>
+      <button class="btn secondary" type="button" onclick="downloadZip('{{ out }}')">Descargar ZIP completo</button>
+      <a class="btn secondary" href="{{ url_for('lab2_page') }}">Nueva Simulación</a>
+      <a class="btn secondary" href="{{ url_for('index') }}">Ir al Inicio</a>
+    </div>
+  </div>
   <p class="muted">Directorio de salida: <code>{{ out }}</code></p>
-  <p>
-    <button class="btn" type="button" onclick="openResultsFolder('{{ out }}')">Abrir carpeta de resultados</button>
-    <button class="btn secondary" type="button" onclick="downloadZip('{{ out }}')">Descargar ZIP completo</button>
-    <a class="btn secondary" href="{{ url_for('index') }}">Ir al Inicio</a>
-  </p>
   {% if figs %}
     <h3>Figuras</h3>
     <div class="figs">
@@ -34,10 +37,6 @@
       {% endfor %}
     </ul>
   {% endif %}
-  <p>
-    <a class="btn secondary" href="{{ url_for('lab2_page') }}">Nueva corrida</a>
-    <a class="btn secondary" href="{{ url_for('index') }}">Ir al Inicio</a>
-  </p>
 
   <script>
     async function openResultsFolder(path){

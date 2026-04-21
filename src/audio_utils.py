@@ -248,6 +248,7 @@ def save_quantizer_low_level_compare(
     title: str,
     fname: str,
     max_ms: float = 40.0,
+    data_csv: Optional[str] = None,
 ):
     """Compara ambos cuantizadores sobre un tramo de amplitud baja-media."""
     x = np.asarray(x, dtype=np.float32)
@@ -271,6 +272,25 @@ def save_quantizer_low_level_compare(
     plt.savefig(fname, dpi=140)
     plt.close()
 
+    # Datos para vista interactiva (zoom/pan con ejes reales en UI).
+    if data_csv:
+        try:
+            data = np.column_stack([
+                t,
+                x[start:stop],
+                xu[start:stop],
+                xa[start:stop],
+            ])
+            np.savetxt(
+                data_csv,
+                data,
+                delimiter=",",
+                header="t_s,original,uniforme,alaw",
+                comments="",
+            )
+        except Exception:
+            pass
+
 def save_quantization_error_compare(
     x: np.ndarray,
     xhat_uniform: np.ndarray,
@@ -279,27 +299,48 @@ def save_quantization_error_compare(
     title: str,
     fname: str,
     max_ms: float = 40.0,
+    context_factor: float = 5.0,
 ):
-    """Compara el error de cuantización de uniforme y A-law sobre el mismo tramo."""
+    """
+    Compara el error de cuantización de uniforme y A-law en una ventana de contexto
+    más amplia que el zoom de baja amplitud.
+    """
     x = np.asarray(x, dtype=np.float32)
     xu = np.asarray(xhat_uniform, dtype=np.float32)
     xa = np.asarray(xhat_alaw, dtype=np.float32)
     n = min(len(x), len(xu), len(xa))
     if n == 0:
         return
-    start, stop = _select_low_level_window(x[:n], fs, max_ms=max_ms)
+    # Ventana "zoom" usada para baja amplitud.
+    start_zoom, stop_zoom = _select_low_level_window(x[:n], fs, max_ms=max_ms)
+    win_zoom = max(1, stop_zoom - start_zoom)
+
+    # Ventana de contexto: más amplia para mostrar el marco general.
+    win_ctx = int(max(win_zoom + 1, round(win_zoom * max(1.0, context_factor))))
+    center = (start_zoom + stop_zoom) // 2
+    start = max(0, center - win_ctx // 2)
+    stop = min(n, start + win_ctx)
+    start = max(0, stop - win_ctx)
+
     t = np.arange(stop - start) / float(fs)
     eu = xu[start:stop] - x[start:stop]
     ea = xa[start:stop] - x[start:stop]
+
+    # Límites del tramo de baja amplitud dentro del eje temporal de contexto.
+    tz0 = max(0.0, (start_zoom - start) / float(fs))
+    tz1 = max(tz0, (stop_zoom - start) / float(fs))
+
     plt.figure()
     plt.axhline(0, color="gray", lw=0.8, ls="--")
-    plt.plot(t, eu, label="Error uniforme", lw=1.0, color="#ff7f0e")
-    plt.plot(t, ea, label="Error A-law", lw=1.0, color="#2ca02c")
+    # Resalta el tramo exacto que se amplía en la gráfica low-level.
+    plt.axvspan(tz0, tz1, color="#cfe8ff", alpha=0.35, label="Tramo ampliado")
+    plt.step(t, eu, where="mid", label="Error uniforme", lw=1.0, color="#ff7f0e")
+    plt.step(t, ea, where="mid", label="Error A-law", lw=1.0, color="#2ca02c")
     plt.grid(True, alpha=0.25)
     plt.xlabel("Tiempo [s]")
     plt.ylabel("Error")
     plt.title(title)
-    plt.legend(loc="upper center", bbox_to_anchor=(0.5, -0.12), ncol=2)
+    plt.legend(loc="upper center", bbox_to_anchor=(0.5, -0.12), ncol=3)
     plt.tight_layout()
     plt.savefig(fname, dpi=140)
     plt.close()
@@ -374,12 +415,22 @@ def plot_entropy_evolution(bit_series_list, labels, fname, step: int = 10000):
         if len(b) == 0:
             xs, ys = [0], [0.0]
         else:
-            steps = max(step, 1)
+            # Usar evolución acumulada y densificar puntos para evitar curvas
+            # "serruchadas" cuando la secuencia es corta (texto).
+            n = len(b)
+            steps = max(int(step), 1)
+            min_points = 60
+            if n // steps < min_points:
+                steps = max(1, n // min_points)
             xs, ys = [], []
-            for i in range(0, len(b), steps):
-                chunk = b[i:i+steps]
-                p1 = float(chunk.mean()) if len(chunk) > 0 else 0.0
-                xs.append(i + len(chunk))
+            csum = np.cumsum(b, dtype=np.int64)
+            for end in range(steps, n + 1, steps):
+                p1 = float(csum[end - 1]) / float(end)
+                xs.append(end)
+                ys.append(hb(p1))
+            if xs[-1] != n:
+                p1 = float(csum[-1]) / float(n)
+                xs.append(n)
                 ys.append(hb(p1))
         plt.plot(xs, ys, label=label)
 

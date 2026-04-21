@@ -123,6 +123,7 @@ def process_audio(
         x, xhat_uniform, xhat_alaw, fs,
         "Fuente A: comparación en tramo de baja amplitud",
         os.path.join(figdir, "A_quantizer_low_level_compare.png"),
+        data_csv=os.path.join(figdir, "A_quantizer_low_level_compare_data.csv"),
     )
     save_quantization_error_compare(
         x, xhat_uniform, xhat_alaw, fs,
@@ -193,7 +194,7 @@ def main():
     ap.add_argument("--source", choices=["audio", "text"], default="audio",
                     help="Fuente a procesar en esta corrida. Default: audio")
     ap.add_argument("--fs", type=int, default=16000, help="Frecuencia de muestreo objetivo (Hz)")
-    ap.add_argument("--n_bits", type=int, default=8, help="Bits de cuantificación (1-16)")
+    ap.add_argument("--n_bits", type=int, default=8, help="Bits de cuantificación (1-24)")
     ap.add_argument("--quantizer", choices=["uniform", "alaw", "both"], default="alaw",
                     help="Tipo de cuantizador para audio: uniforme, alaw (G.711 Argentina) o ambos. Default: alaw")
     ap.add_argument("--lfsr_seed", type=lambda x: int(x, 0), default=0b1010110011, help="Semilla del LFSR (base 0b o 0x aceptada)")

@@ -58,8 +58,13 @@
             </div>
             <div style="padding:12px; border:1px solid #dbeafe; border-radius:8px; background:#eff6ff;">
                 <strong>2. Filtro acoplado</strong>
+                {% if summary.use_rx_rrc %}
                 <div class="muted" style="margin-top:6px;">Se aplica el RRC del receptor para maximizar SNR y controlar ISI.</div>
                 <div style="margin-top:6px;"><code>z[n] = r[n] * h_MF[n]</code></div>
+                {% else %}
+                <div class="muted" style="margin-top:6px;">Se desactiva el filtro acoplado y se observa el efecto de muestrear sin RRC en recepción.</div>
+                <div style="margin-top:6px;"><code>z[n] = r[n]</code></div>
+                {% endif %}
             </div>
             <div style="padding:12px; border:1px solid #dbeafe; border-radius:8px; background:#eff6ff;">
                 <strong>3. Muestreo</strong>
@@ -83,19 +88,37 @@
             {% if 'mf_impulse.png' in rx_figs %}
             <div>
                 <img src="{{ url_for('api_files') }}?path={{ out }}/mf_impulse.png" alt="mf_impulse.png">
+                {% if summary.use_rx_rrc %}
                 <div class="muted"><strong>h_MF[n]</strong>: respuesta impulsiva del filtro acoplado.</div>
+                {% else %}
+                <div class="muted"><strong>h_Rx[n]</strong>: respuesta impulsiva del bloque de entrada Rx sin RRC (delta).</div>
+                {% endif %}
             </div>
             {% endif %}
             {% if 'mf_freq.png' in rx_figs %}
             <div>
                 <img src="{{ url_for('api_files') }}?path={{ out }}/mf_freq.png" alt="mf_freq.png">
+                {% if summary.use_rx_rrc %}
                 <div class="muted"><strong>H_MF(f)</strong>: respuesta en frecuencia del filtro acoplado.</div>
+                {% else %}
+                <div class="muted"><strong>H_Rx(f)</strong>: respuesta en frecuencia del bloque de entrada Rx sin RRC (plana).</div>
+                {% endif %}
             </div>
             {% endif %}
             {% if 'rx_time.png' in rx_figs %}
             <div>
                 <img src="{{ url_for('api_files') }}?path={{ out }}/rx_time.png" alt="rx_time.png">
+                {% if summary.use_rx_rrc %}
                 <div class="muted"><strong>z[n]</strong>: señal a la salida del filtro acoplado.</div>
+                {% else %}
+                <div class="muted"><strong>z[n]=r[n]</strong>: señal de entrada Rx sin filtrado acoplado.</div>
+                {% endif %}
+            </div>
+            {% endif %}
+            {% if 'rx_downsampling.png' in rx_figs %}
+            <div>
+                <img src="{{ url_for('api_files') }}?path={{ out }}/rx_downsampling.png" alt="rx_downsampling.png">
+                <div class="muted"><strong>Downsampling</strong>: instantes de muestreo <code>kT_s</code> sobre <code>z[n]</code> y muestras tomadas.</div>
             </div>
             {% endif %}
             {% if 'rx_eye.png' in rx_figs %}
@@ -138,6 +161,95 @@
             </div>
             <div style="text-align: center;">
                 <a href="{{ url_for('download', out=out, file=ber_plot|basename) }}" class="btn">Descargar Gráfico</a>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if ber_rows %}
+        <div style="margin-top: 18px;">
+            <h3>Cómo Se Construye La Curva</h3>
+            <div class="card" style="background:#f8fafc;">
+                <p style="margin-top:0;">
+                    La curva teórica se construye evaluando, para una grilla densa de valores de <code>Eb/N0</code>, la expresión analítica de BER para
+                    detección coherente en canal AWGN, usando la modulación de esta corrida (<strong>{{ ber_context.modulation }}{% if ber_context.modulation in ['MPSK','M-PSK'] and ber_context.m_order %}, M={{ ber_context.m_order }}{% endif %}</strong>):
+                </p>
+                <div style="text-align:center; font-size:1.1rem; margin:10px 0 14px 0;">
+                    {% if ber_context.modulation in ['BPSK', 'QPSK'] %}
+                    <code>P_b = \frac{1}{2}\,\mathrm{erfc}\left(\sqrt{E_b/N_0}\right)</code>
+                    {% else %}
+                    <code>P_b \approx \frac{2}{\log_2 M}\,Q\!\left(\sqrt{2\log_2(M)\,\frac{E_b}{N_0}}\sin\!\frac{\pi}{M}\right)</code>
+                    {% endif %}
+                </div>
+                <p class="muted" style="margin-bottom:10px;">
+                    En esta corrida, la teoría se dibujó con <strong>{{ ber_context.theory_points }}</strong> puntos entre
+                    <strong>{{ "%.2f"|format(ber_context.eb_start) }}</strong> dB y <strong>{{ "%.2f"|format(ber_context.eb_end) }}</strong> dB,
+                    mientras que la curva simulada usa únicamente los <strong>{{ ber_context.sim_points }}</strong> puntos reales del barrido con
+                    paso <strong>{{ ber_context.eb_step }}</strong> dB.
+                </p>
+                <p class="muted" style="margin-bottom:0;">
+                    Para cada punto práctico del barrido se ejecutaron <strong>{{ ber_context.trials_per_ebn0 }}</strong> realizaciones Monte Carlo
+                    y luego se estimó la BER como razón entre bits erróneos y bits comparados.
+                </p>
+                <p class="muted" style="margin-top:10px; margin-bottom:0;">
+                    Configuración Rx usada en esta corrida: <strong>{% if ber_context.use_rx_rrc %}con{% else %}sin{% endif %} RRC de recepción</strong>,
+                    offset temporal de muestreo <strong>{{ "%.3f"|format(ber_context.timing_offset_ts) }} Ts</strong>.
+                </p>
+            </div>
+
+            <div class="card" style="margin-top:14px; background:#f8fafc;">
+                <h4 style="margin-top:0;">Tabla Teórica Del Barrido Real</h4>
+                <div class="muted" style="margin-bottom:10px;">
+                    Esta tabla muestra, en los mismos puntos de <code>Eb/N0</code> que usó la simulación, el valor teórico correspondiente.
+                </div>
+                <div style="overflow:auto;">
+                    <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                        <thead>
+                            <tr style="background:#e2e8f0;">
+                                <th style="padding:8px; border:1px solid #cbd5e1; text-align:right;">Eb/N0 objetivo [dB]</th>
+                                <th style="padding:8px; border:1px solid #cbd5e1; text-align:right;">BER teórica</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in ber_rows %}
+                            <tr>
+                                <td style="padding:8px; border:1px solid #e2e8f0; text-align:right;">{{ "%.2f"|format(row.ebn0_target_db) }}</td>
+                                <td style="padding:8px; border:1px solid #e2e8f0; text-align:right;">{{ "%.3e"|format(row.ber_theory) }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card" style="margin-top:14px; background:#f8fafc;">
+                <h4 style="margin-top:0;">Tabla Práctica / Monte Carlo</h4>
+                <div class="muted" style="margin-bottom:10px;">
+                    Para cada valor de <code>Eb/N0</code> se repite la cadena completa transmisión-canal-recepción y se promedian las BER obtenidas.
+                </div>
+                <div style="overflow:auto;">
+                    <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                        <thead>
+                            <tr style="background:#e2e8f0;">
+                                <th style="padding:8px; border:1px solid #cbd5e1; text-align:right;">Eb/N0 objetivo [dB]</th>
+                                <th style="padding:8px; border:1px solid #cbd5e1; text-align:right;">BER simulada</th>
+                                <th style="padding:8px; border:1px solid #cbd5e1; text-align:right;">IC 95%</th>
+                                <th style="padding:8px; border:1px solid #cbd5e1; text-align:right;">Eb/N0 estimado medio [dB]</th>
+                                <th style="padding:8px; border:1px solid #cbd5e1; text-align:right;">Trials</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in ber_rows %}
+                            <tr>
+                                <td style="padding:8px; border:1px solid #e2e8f0; text-align:right;">{{ "%.2f"|format(row.ebn0_target_db) }}</td>
+                                <td style="padding:8px; border:1px solid #e2e8f0; text-align:right;">{{ "%.3e"|format(row.ber_sim) }}</td>
+                                <td style="padding:8px; border:1px solid #e2e8f0; text-align:right;">{{ "%.3e"|format(row.ber_ci95) }}</td>
+                                <td style="padding:8px; border:1px solid #e2e8f0; text-align:right;">{{ "%.2f"|format(row.ebn0_est_mean_db) }}</td>
+                                <td style="padding:8px; border:1px solid #e2e8f0; text-align:right;">{{ row.trials }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
         {% endif %}

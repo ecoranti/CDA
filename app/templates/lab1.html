@@ -1,5 +1,23 @@
 {% extends 'base.html' %}
 {% block content %}
+<style>
+  .lab1-source-grid {
+    display: grid;
+    gap: 12px;
+  }
+  .lab1-source-row {
+    display: grid;
+    grid-template-columns: 90px 1fr auto;
+    gap: 10px;
+    align-items: center;
+  }
+  @media (max-width: 860px) {
+    .lab1-source-row {
+      grid-template-columns: 1fr;
+      align-items: stretch;
+    }
+  }
+</style>
 <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
   <h2 style="margin:0;">Formateo y Cuantización</h2>
   <a class="btn secondary" href="{{ url_for('index') }}">Ir al Inicio</a>
@@ -18,13 +36,25 @@
 
     <div class="field" data-source-field="audio">
       <label>Audio WAV</label>
-      <input name="audio" value="{{ defaults.audio }}">
+      <div class="lab1-source-grid">
+        <div class="lab1-source-row">
+          <label for="audio-path" style="margin:0;">Audio</label>
+          <input id="audio-path" name="audio" value="{{ defaults.audio }}">
+          <button type="button" class="btn secondary" onclick="pickSourceFile('audio-path', 'audio')">Elegir...</button>
+        </div>
+      </div>
       <span class="muted">Ruta al archivo de voz (.wav). Se re-muestrea a la fs elegida, se convierte a mono y se normaliza a [-1, 1].</span>
     </div>
 
     <div class="field" data-source-field="text">
       <label>Texto</label>
-      <input name="text" value="{{ defaults.text }}">
+      <div class="lab1-source-grid">
+        <div class="lab1-source-row">
+          <label for="text-path" style="margin:0;">Texto</label>
+          <input id="text-path" name="text" value="{{ defaults.text }}">
+          <button type="button" class="btn secondary" onclick="pickSourceFile('text-path', 'text')">Elegir...</button>
+        </div>
+      </div>
       <span class="muted">Archivo UTF-8. Se convierte directamente de bytes a bits (sin cuantización, ya es digital).</span>
     </div>
 
@@ -34,9 +64,15 @@
       <span class="muted" id="fs-help">Teorema de Nyquist: fs ≥ 2·BW. Para voz (BW ≈ 4 kHz) son suficientes 8 kHz; 16 kHz da mejor calidad.</span>
     </div>
 
+    <div class="field">
+      <label>Ancho de banda del canal W [Hz]</label>
+      <input name="bw_hz" type="number" min="1" step="1" value="{{ defaults.bw_hz }}">
+      <span class="muted">Se usa para calcular Shannon-Hartley y el Límite de Shannon con los parámetros de esta corrida.</span>
+    </div>
+
     <div class="field" data-source-field="audio">
       <label>Bits de cuantización (n) — Niveles L = 2ⁿ</label>
-      <input name="n_bits" type="number" min="1" max="16" step="1" value="8">
+      <input name="n_bits" type="number" min="1" max="24" step="1" value="8">
       <span class="muted" id="n-bits-help">Con n=8 → L=256 niveles. Cada bit extra duplica los niveles y agrega ~6 dB de SQNR. El parámetro que modificamos es n; L se deduce.</span>
     </div>
 
@@ -78,6 +114,7 @@
       text: g('input[name="text"]').value,
       out: g('input[name="out"]').value,
       fs: g('input[name="fs"]').value,
+      bw_hz: g('input[name="bw_hz"]').value,
       n_bits: g('input[name="n_bits"]').value,
       quantizer: g('select[name="quantizer"]').value,
     };
@@ -89,6 +126,7 @@
     s('input[name="text"]', v.text);
     s('input[name="out"]', v.out);
     s('input[name="fs"]', v.fs);
+    s('input[name="bw_hz"]', v.bw_hz);
     s('input[name="n_bits"]', v.n_bits);
     s('select[name="quantizer"]', v.quantizer);
   }
@@ -106,7 +144,7 @@
     const el = document.querySelector('input[name="n_bits"]');
     const help = document.getElementById('n-bits-help');
     if (!el || !help) return;
-    const n = Math.max(1, Math.min(16, parseInt(el.value || '8', 10) || 8));
+    const n = Math.max(1, Math.min(24, parseInt(el.value || '8', 10) || 8));
     const L = 2 ** n;
     help.textContent = `Con n=${n} → L=${L} niveles. Cada bit extra duplica los niveles y agrega ~6 dB de SQNR. El parámetro que modificamos es n; L se deduce.`;
   }
@@ -136,6 +174,30 @@
   }
   function saveLab1ToLS() { try { localStorage.setItem('lab1_form', JSON.stringify(formToObj())); } catch (e) { } }
   function loadLab1FromLS() { try { const v = localStorage.getItem('lab1_form'); if (v) { objToForm(JSON.parse(v)); } } catch (e) { } }
+  async function pickSourceFile(inputId, kind) {
+    const el = document.getElementById(inputId);
+    if (!el) return;
+    try {
+      const res = await fetch('/api/pick_file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: el.value, kind })
+      });
+      const j = await res.json();
+      if (j.ok && j.path) {
+        el.value = j.path;
+        saveLab1ToLS();
+        return;
+      }
+      if (!j.canceled) {
+        if (typeof addFlash === 'function') addFlash('error', j.error || 'No se pudo seleccionar el archivo.');
+        else alert(j.error || 'No se pudo seleccionar el archivo.');
+      }
+    } catch (e) {
+      if (typeof addFlash === 'function') addFlash('error', 'No se pudo seleccionar el archivo.');
+      else alert('No se pudo seleccionar el archivo.');
+    }
+  }
   window.addEventListener('DOMContentLoaded', () => {
     loadLab1FromLS();
     syncSourceFields();

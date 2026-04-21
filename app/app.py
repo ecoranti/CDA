@@ -44,6 +44,7 @@ def create_app() -> Flask:
     DEFAULTS = {
             "audio": str(ROOT / "data/voice.wav"),
             "text": str(ROOT / "data/sample_text.txt"),
+            "bw_hz": 100000,
             "out_lab1": str(ROOT / "outputs_ui/lab1"),
             "out_lab2": str(ROOT / "outputs_ui/lab2"),
             "out_lab3": str(ROOT / "outputs_ui/lab3"),
@@ -95,6 +96,117 @@ def create_app() -> Flask:
             shutil.copyfile(src, dst)
         except Exception:
             pass
+
+    def _generate_quantization_quality_plots(out_dir: Path, x, n_bits: int):
+        """Genera gráficos comparativos de SQNR/MSE y evolución de ECM (audio)."""
+        import numpy as _np
+        import matplotlib.pyplot as _plt
+        import pandas as _pd
+
+        xhat_uni = lab1_sqnr.eval_uniform(x, bits=n_bits)
+        mse_uni = lab1_sqnr.mse(x, xhat_uni)
+        sqnr_uni = lab1_sqnr.sqnr_db(x, xhat_uni)
+
+        xhat_al = lab1_sqnr.eval_alaw(x, A=87.6, bits=n_bits)
+        mse_al = lab1_sqnr.mse(x, xhat_al)
+        sqnr_al = lab1_sqnr.sqnr_db(x, xhat_al)
+
+        labels = ["Uniforme", "A-law (87.6)"]
+        sqnrs_plot = [sqnr_uni, sqnr_al]
+        mses_plot = [mse_uni, mse_al]
+
+        _plt.figure()
+        _plt.bar(range(len(sqnrs_plot)), sqnrs_plot, color=["#64748b", "#2563eb"])
+        _plt.xticks(range(len(labels)), labels)
+        _plt.ylabel("SQNR (dB)")
+        _plt.title("Comparación de SQNR ({} bits)".format(n_bits))
+        _plt.tight_layout()
+        _plt.savefig(out_dir / "sqnr_comparacion.png", dpi=140)
+        _plt.close()
+
+        _plt.figure()
+        _plt.bar(range(len(mses_plot)), mses_plot, color=["#64748b", "#2563eb"])
+        _plt.xticks(range(len(labels)), labels)
+        _plt.ylabel("ECM")
+        _plt.title("Comparación de ECM ({} bits)".format(n_bits))
+        _plt.tight_layout()
+        _plt.savefig(out_dir / "mse_comparacion.png", dpi=140)
+        _plt.close()
+
+        # Evolución del ECM acumulado: ECM[n] = (1/n) * sum_{k=1..n} e[k]^2
+        e_uni2 = _np.square(_np.asarray(x, dtype=_np.float64) - _np.asarray(xhat_uni, dtype=_np.float64))
+        e_al2 = _np.square(_np.asarray(x, dtype=_np.float64) - _np.asarray(xhat_al, dtype=_np.float64))
+        n = _np.arange(1, len(e_uni2) + 1, dtype=_np.float64)
+        ecm_uni = _np.cumsum(e_uni2) / n
+        ecm_al = _np.cumsum(e_al2) / n
+
+        max_points = 2500
+        step = max(1, len(n) // max_points)
+        idx = _np.arange(0, len(n), step, dtype=int)
+        if idx[-1] != len(n) - 1:
+            idx = _np.append(idx, len(n) - 1)
+
+        _plt.figure()
+        _plt.plot(n[idx], ecm_uni[idx], label="Uniforme", color="#64748b")
+        _plt.plot(n[idx], ecm_al[idx], label="A-law (87.6)", color="#2563eb")
+        _plt.xlabel("Cantidad de muestras procesadas")
+        _plt.ylabel("ECM acumulado")
+        _plt.title("Evolución del ECM acumulado")
+        _plt.grid(True, alpha=0.3)
+        _plt.legend()
+        _plt.tight_layout()
+        _plt.savefig(out_dir / "ecm_evolucion.png", dpi=140)
+        _plt.close()
+
+        rows_sqnr = list(zip(labels, sqnrs_plot, mses_plot))
+        df_sqnr = _pd.DataFrame(rows_sqnr, columns=["Cuantizador", "SQNR (dB)", "MSE"])
+        df_sqnr.to_csv(out_dir / "sqnr_mse_resumen.csv", index=False)
+
+    def _generate_shannon_theory_plots(out_dir: Path, bw_hz: float = 100_000.0, rb_bps: Optional[float] = None):
+        """Genera curvas teóricas de capacidad de Shannon-Hartley y límite de Shannon."""
+        import numpy as _np
+        import matplotlib.pyplot as _plt
+
+        # 1) Capacidad C = W log2(1+SNR)
+        snr_db = _np.linspace(-10.0, 30.0, 400)
+        snr_lin = 10.0 ** (snr_db / 10.0)
+        c_bps = bw_hz * _np.log2(1.0 + snr_lin)
+
+        _plt.figure()
+        _plt.plot(snr_db, c_bps / 1e3, color="#2563eb", lw=2.0, label="Capacidad teórica")
+        if rb_bps is not None and rb_bps > 0:
+            _plt.axhline(rb_bps / 1e3, color="#dc2626", ls="--", lw=1.4, label=f"R_b objetivo = {rb_bps/1e3:.1f} kb/s")
+        _plt.xlabel("SNR [dB]")
+        _plt.ylabel("Capacidad C [kb/s]")
+        _plt.title(f"Shannon-Hartley (W={bw_hz/1e3:.0f} kHz)")
+        _plt.grid(True, alpha=0.3)
+        _plt.legend()
+        _plt.tight_layout()
+        _plt.savefig(out_dir / "capacidad_shannon_hartley.png", dpi=140)
+        _plt.close()
+
+        # 2) Límite de Shannon: (Eb/N0)_min = (2^eta - 1)/eta
+        eta = _np.linspace(0.05, 4.0, 400)  # [bit/s/Hz]
+        ebn0_min_lin = (_np.power(2.0, eta) - 1.0) / eta
+        ebn0_min_db = 10.0 * _np.log10(ebn0_min_lin)
+
+        _plt.figure()
+        _plt.plot(eta, ebn0_min_db, color="#111827", lw=2.0, label="Límite teórico")
+        _plt.axhline(-1.59, color="#6b7280", ls=":", lw=1.3, label="-1.59 dB (eta→0)")
+        if rb_bps is not None and rb_bps > 0 and bw_hz > 0:
+            eta0 = rb_bps / bw_hz
+            if eta0 > 0:
+                eb0 = (2.0 ** eta0 - 1.0) / eta0
+                eb0_db = 10.0 * _np.log10(eb0)
+                _plt.plot([eta0], [eb0_db], "o", color="#dc2626", ms=5, label=f"Trabajo (η={eta0:.2f})")
+        _plt.xlabel("Eficiencia espectral η = R_b/W [bit/s/Hz]")
+        _plt.ylabel("E_b/N_0 mínimo [dB]")
+        _plt.title("Límite de Shannon")
+        _plt.grid(True, alpha=0.3)
+        _plt.legend()
+        _plt.tight_layout()
+        _plt.savefig(out_dir / "limite_shannon.png", dpi=140)
+        _plt.close()
 
     def _latest_lab2_output_dir(base_lab2: str) -> Optional[str]:
         try:
@@ -205,7 +317,8 @@ def create_app() -> Flask:
 
     def _generate_formateo_outputs(out_dir: Path, audio: str, text_path: str, fs: int, n_bits: int, quantizer: str,
                                   source: str, lfsr_seed: int, lfsr_taps: tuple[int, ...], lfsr_bitwidth: int,
-                                  hist_bins: int = 50, entropy_step_a: int = 10000, entropy_step_b: int = 500) -> dict:
+                                  hist_bins: int = 50, entropy_step_a: int = 10000, entropy_step_b: int = 500,
+                                  bw_hz: float = 100000.0) -> dict:
         """Genera las figuras de Formateo dentro de una carpeta específica y retorna rutas relativas."""
         out_dir.mkdir(parents=True, exist_ok=True)
         figdir = lab1.ensure_dirs(str(out_dir))
@@ -229,36 +342,13 @@ def create_app() -> Flask:
         if source == "audio":
             try:
                 x, _ = lab1.load_wav_mono(audio, target_fs=fs)
-                xhat_uni = lab1_sqnr.eval_uniform(x, bits=n_bits)
-                mse_uni  = lab1_sqnr.mse(x, xhat_uni)
-                sqnr_uni = lab1_sqnr.sqnr_db(x, xhat_uni)
-
-                xhat_al  = lab1_sqnr.eval_alaw(x, A=87.6, bits=n_bits)
-                mse_al   = lab1_sqnr.mse(x, xhat_al)
-                sqnr_al  = lab1_sqnr.sqnr_db(x, xhat_al)
-
-                import matplotlib.pyplot as plt
-                labels     = ["Uniforme", "A-law (87.6)"]
-                sqnrs_plot = [sqnr_uni, sqnr_al]
-                mses_plot  = [mse_uni,  mse_al]
-
-                plt.figure()
-                plt.bar(range(len(sqnrs_plot)), sqnrs_plot, color=["#64748b", "#2563eb"])
-                plt.xticks(range(len(labels)), labels)
-                plt.ylabel("SQNR (dB)")
-                plt.title("Comparación de SQNR ({} bits)".format(n_bits))
-                plt.tight_layout()
-                plt.savefig(out_dir / "sqnr_comparacion.png", dpi=140)
-                plt.close()
-
-                plt.figure()
-                plt.bar(range(len(mses_plot)), mses_plot, color=["#64748b", "#2563eb"])
-                plt.xticks(range(len(labels)), labels)
-                plt.ylabel("MSE")
-                plt.title("Comparación de MSE ({} bits)".format(n_bits))
-                plt.tight_layout()
-                plt.savefig(out_dir / "mse_comparacion.png", dpi=140)
-                plt.close()
+                _generate_quantization_quality_plots(out_dir, x, n_bits)
+                _generate_shannon_theory_plots(out_dir, bw_hz=float(bw_hz), rb_bps=float(fs * n_bits))
+            except Exception:
+                pass
+        else:
+            try:
+                _generate_shannon_theory_plots(out_dir, bw_hz=float(bw_hz), rb_bps=None)
             except Exception:
                 pass
 
@@ -275,7 +365,13 @@ def create_app() -> Flask:
             except Exception:
                 figs.append(str(p))
         # incluir sqnr/mse si existen
-        for name in ["sqnr_comparacion.png", "mse_comparacion.png"]:
+        for name in [
+            "sqnr_comparacion.png",
+            "mse_comparacion.png",
+            "ecm_evolucion.png",
+            "capacidad_shannon_hartley.png",
+            "limite_shannon.png",
+        ]:
             p = out_dir / name
             if p.exists():
                 try:
@@ -288,7 +384,8 @@ def create_app() -> Flask:
     def _validate_lab1_inputs(audio: str, text: str, out_dir: str, fs: int, n_bits: int, quantizer: str,
                               source: str,
                               lfsr_seed: int, lfsr_bitwidth: int, hist_bins: int,
-                              entropy_step_a: int, entropy_step_b: int, lfsr_taps: tuple[int, ...]):
+                              entropy_step_a: int, entropy_step_b: int, lfsr_taps: tuple[int, ...],
+                              bw_hz: float):
         if source not in {"audio", "text"}:
             raise ValueError("source (Formateo) inválido. Use 'audio' o 'text'.")
         if source == "audio" and not os.path.isfile(audio):
@@ -297,8 +394,10 @@ def create_app() -> Flask:
             raise ValueError(f"Texto no existe: {text}")
         if fs <= 0:
             raise ValueError("fs debe ser > 0")
-        if not (1 <= n_bits <= 16):
-            raise ValueError("n_bits debe estar entre 1 y 16")
+        if bw_hz <= 0:
+            raise ValueError("ancho de banda (bw_hz) debe ser > 0")
+        if not (1 <= n_bits <= 24):
+            raise ValueError("n_bits debe estar entre 1 y 24")
         if quantizer not in {"uniform", "alaw", "both"}:
             raise ValueError("quantizer inválido")
         if not (1 <= lfsr_bitwidth <= 32):
@@ -358,6 +457,7 @@ def create_app() -> Flask:
         text = request.form.get("text") or DEFAULTS["text"]
         base_out = request.form.get("out") or DEFAULTS["out_lab1"]
         fs = int(request.form.get("fs") or 16000)
+        bw_hz = float(request.form.get("bw_hz") or DEFAULTS["bw_hz"])
         n_bits = int(request.form.get("n_bits") or 8)
         quantizer = request.form.get("quantizer") or "alaw"
         lfsr_seed = _parse_int_auto(request.form.get("lfsr_seed"), int("0b1010110011", 2))
@@ -376,7 +476,7 @@ def create_app() -> Flask:
 
         try:
             _validate_lab1_inputs(audio, text, out_dir, fs, n_bits, quantizer, source,
-                                  lfsr_seed, lfsr_bitwidth, hist_bins, entropy_step_a, entropy_step_b, lfsr_taps)
+                                  lfsr_seed, lfsr_bitwidth, hist_bins, entropy_step_a, entropy_step_b, lfsr_taps, bw_hz)
             log_path = Path(out_dir) / "run_log.txt"
             _append_log(log_path, f"Formateo start: source={source}, audio={audio}, text={text}, fs={fs}, n_bits={n_bits}, quantizer={quantizer}")
 
@@ -390,48 +490,18 @@ def create_app() -> Flask:
 
                 try:
                     x, _ = lab1.load_wav_mono(audio, target_fs=fs)
-                    xhat_uni = lab1_sqnr.eval_uniform(x, bits=n_bits)
-                    mse_uni = lab1_sqnr.mse(x, xhat_uni)
-                    sqnr_uni = lab1_sqnr.sqnr_db(x, xhat_uni)
-
-                    xhat_al  = lab1_sqnr.eval_alaw(x, A=87.6, bits=n_bits)
-                    mse_al   = lab1_sqnr.mse(x, xhat_al)
-                    sqnr_al  = lab1_sqnr.sqnr_db(x, xhat_al)
-
-                    import matplotlib.pyplot as plt
-                    import os as _os
-                    labels     = ["Uniforme", "A-law (87.6)"]
-                    sqnrs_plot = [sqnr_uni, sqnr_al]
-                    mses_plot  = [mse_uni,  mse_al]
-
-                    plt.figure()
-                    plt.bar(range(len(sqnrs_plot)), sqnrs_plot, color=["#64748b", "#2563eb"])
-                    plt.xticks(range(len(labels)), labels)
-                    plt.ylabel("SQNR (dB)")
-                    plt.title("Comparación de SQNR ({} bits)".format(n_bits))
-                    plt.tight_layout()
-                    plt.savefig(_os.path.join(out_dir, "sqnr_comparacion.png"), dpi=140)
-                    plt.close()
-
-                    plt.figure()
-                    plt.bar(range(len(mses_plot)), mses_plot, color=["#64748b", "#2563eb"])
-                    plt.xticks(range(len(labels)), labels)
-                    plt.ylabel("MSE")
-                    plt.title("Comparación de MSE ({} bits)".format(n_bits))
-                    plt.tight_layout()
-                    plt.savefig(_os.path.join(out_dir, "mse_comparacion.png"), dpi=140)
-                    plt.close()
-
-                    import pandas as pd
-                    rows_sqnr = list(zip(labels, sqnrs_plot, mses_plot))
-                    df_sqnr = pd.DataFrame(rows_sqnr, columns=["Cuantizador", "SQNR (dB)", "MSE"])
-                    df_sqnr.to_csv(os.path.join(out_dir, "sqnr_mse_resumen.csv"), index=False)
+                    _generate_quantization_quality_plots(Path(out_dir), x, n_bits)
+                    _generate_shannon_theory_plots(Path(out_dir), bw_hz=bw_hz, rb_bps=float(fs * n_bits))
                 except Exception as ex:
                     _append_log(log_path, f"[WARN] SQNR/MSE: {ex}")
                     flash(f"[WARN] No se pudo calcular SQNR/MSE: {ex}", "warning")
             else:
                 rows.extend(lab1.process_text(text, figdir, lfsr_seed=lfsr_seed, lfsr_taps=lfsr_taps,
                                               lfsr_bitwidth=lfsr_bitwidth, entropy_step=entropy_step_b))
+                try:
+                    _generate_shannon_theory_plots(Path(out_dir), bw_hz=bw_hz, rb_bps=None)
+                except Exception:
+                    pass
 
             lab1_report.save_metrics_csv(out_dir, rows)
             lab1_report.write_markdown(out_dir)
@@ -446,6 +516,7 @@ def create_app() -> Flask:
                 "audio": audio,
                 "text": text,
                 "fs": fs,
+                "bw_hz": bw_hz,
                 "n_bits": n_bits,
                 "quantizer": quantizer,
                 "lfsr_seed": lfsr_seed,
@@ -479,6 +550,16 @@ def create_app() -> Flask:
         if figures_dir.exists():
             for p in sorted(figures_dir.glob("*.png")):
                 figs.append(p.name)
+        root_figs = []
+        for name in [
+            "sqnr_comparacion.png",
+            "mse_comparacion.png",
+            "ecm_evolucion.png",
+            "capacidad_shannon_hartley.png",
+            "limite_shannon.png",
+        ]:
+            if (Path(out_dir) / name).exists():
+                root_figs.append(name)
         files = []
         for p in sorted(Path(out_dir).glob("*")):
             if p.is_file() and p.suffix in {".png", ".csv", ".md"}:
@@ -491,7 +572,20 @@ def create_app() -> Flask:
                 log_text = lp.read_text(encoding="utf-8")
             except Exception:
                 log_text = None
-        return render_template("lab1_results.html", out=out_dir, figs=figs, files=files, log_text=log_text, summary=summary)
+        low_level_csv = None
+        llp = Path(out_dir) / "figures" / "A_quantizer_low_level_compare_data.csv"
+        if llp.exists():
+            low_level_csv = str(llp)
+        return render_template(
+            "lab1_results.html",
+            out=out_dir,
+            figs=figs,
+            root_figs=root_figs,
+            files=files,
+            log_text=log_text,
+            summary=summary,
+            low_level_csv=low_level_csv,
+        )
 
     # ---------- Lab 2 ----------
     @app.get("/lab2")
@@ -505,7 +599,8 @@ def create_app() -> Flask:
     def lab2_run():
         base_out = request.form.get("out") or DEFAULTS["out_lab2"]
         out_dir = str(_ts_dir(Path(base_out)))
-        mod = request.form.get("modulation") or "QPSK"
+        mod = (request.form.get("modulation") or "QPSK").upper()
+        m_order = int(request.form.get("m_order") or 4)
         bits_len = int(request.form.get("bits_len") or 2000)
         sps = int(request.form.get("sps") or 8)
         alpha = float(request.form.get("alpha") or 0.25)
@@ -519,8 +614,11 @@ def create_app() -> Flask:
                 raise ValueError("sps debe ser > 0")
             if bits_len <= 0:
                 raise ValueError("bits_len debe ser > 0")
-            if mod.upper() not in {"BPSK", "QPSK"}:
-                raise ValueError("Modulación no soportada (use BPSK o QPSK)")
+            if mod not in {"BPSK", "QPSK", "MPSK", "M-PSK"}:
+                raise ValueError("Modulación no soportada (use BPSK, QPSK o M-PSK)")
+            if mod in {"MPSK", "M-PSK"}:
+                if m_order < 2 or (m_order & (m_order - 1)) != 0:
+                    raise ValueError("Para M-PSK, M debe ser potencia de 2 (>=2)")
             if eye_span < 1:
                 raise ValueError("eye_span debe ser >= 1")
             if eye_traces <= 0:
@@ -528,7 +626,8 @@ def create_app() -> Flask:
             params = lab2_rrc.Lab2Params(
                 out_dir=out_dir,
                 n_bits=bits_len,
-                modulation=mod.upper(),
+                modulation=mod,
+                m_order=m_order,
                 sps=sps,
                 rolloff=alpha,
                 span=span,
@@ -540,7 +639,8 @@ def create_app() -> Flask:
             # Log simple
             _write_json(Path(out_dir) / "params.json", {
                 "n_bits": bits_len,
-                "modulation": mod.upper(),
+                "modulation": mod,
+                "m_order": m_order,
                 "sps": sps,
                 "rolloff": alpha,
                 "span": span,
@@ -550,6 +650,10 @@ def create_app() -> Flask:
                 "eye_traces": eye_traces,
             })
             _append_log(Path(out_dir) / "run_log.txt", f"Modulación run OK: {params}")
+            try:
+                _generate_shannon_theory_plots(Path(out_dir), bw_hz=100_000.0, rb_bps=None)
+            except Exception:
+                pass
         except Exception as e:
             flash(f"Error al ejecutar Modulación: {e}", "error")
             return redirect(url_for("lab2_page"))
@@ -562,7 +666,7 @@ def create_app() -> Flask:
         p = Path(out_dir)
         figs = []
         # Preferencia por nombres estándar sugeridos
-        for name in ["iq_time.png", "constellation_symbols.png", "constellation_shaped.png", "spectrum.png", "rrc_impulse.png", "eye_diagram.png", "l1_bits_hist.png", "bits_iq_transition.png", "rrc_discrete_upsampling.png", "rrc_discrete_shaping.png", "rrc_two_symbols.png"]:
+        for name in ["iq_time.png", "constellation_symbols.png", "constellation_shaped.png", "spectrum.png", "rrc_impulse.png", "eye_diagram.png", "l1_bits_hist.png", "bits_iq_transition.png", "rrc_discrete_upsampling.png", "rrc_discrete_shaping.png", "rrc_two_symbols.png", "isi_vs_sps.png", "capacidad_shannon_hartley.png", "limite_shannon.png"]:
             fn = p / name
             if fn.exists():
                 figs.append(name)
@@ -584,15 +688,24 @@ def create_app() -> Flask:
         base_abs = (ROOT / out_dir).resolve() if not Path(out_dir).is_absolute() else Path(out_dir).resolve()
         # Lab2 params
         mod = (data.get("modulation") or "QPSK").upper()
+        m_order = int(data.get("m_order") or 4)
         sps = int(data.get("sps") or 8)
         alpha = float(data.get("alpha") or data.get("rolloff") or 0.25)
         span = int(data.get("span") or 8)
+        raw_deltas = data.get("isi_sps_deltas") or [0, 0, 0, 0]
+        try:
+            deltas_list = list(raw_deltas)[:4]
+            deltas_list += [0] * (4 - len(deltas_list))
+            isi_sps_deltas = tuple(max(0, int(v)) for v in deltas_list)
+        except Exception:
+            isi_sps_deltas = (0, 0, 0, 0)
         seed = 0
         # Lab1 params
         l1 = data.get("lab1") or {}
         audio = l1.get("audio") or DEFAULTS["audio"]
         text = l1.get("text") or DEFAULTS["text"]
         fs = int(l1.get("fs") or 16000)
+        bw_hz = float(l1.get("bw_hz") or DEFAULTS["bw_hz"])
         n_bits = int(l1.get("n_bits") or 8)
         quantizer = (l1.get("quantizer") or "alaw").lower()
         source = (l1.get("source") or "audio").lower()
@@ -608,15 +721,18 @@ def create_app() -> Flask:
         formateo_dir = base_abs / "formateo"
         formateo_payload = _generate_formateo_outputs(
             formateo_dir, audio, text, fs, n_bits, quantizer, source,
-            l1_seed, l1_taps, l1_bitwidth
+            l1_seed, l1_taps, l1_bitwidth, bw_hz=bw_hz
         )
         try:
             if sps <= 0:
                 raise ValueError("sps debe ser > 0")
-            if mod not in {"BPSK", "QPSK"}:
-                raise ValueError("Modulación no soportada (use BPSK o QPSK)")
-            if not (1 <= n_bits <= 16):
-                raise ValueError("n_bits (Formateo) debe estar entre 1 y 16")
+            if mod not in {"BPSK", "QPSK", "MPSK", "M-PSK"}:
+                raise ValueError("Modulación no soportada (use BPSK, QPSK o M-PSK)")
+            if mod in {"MPSK", "M-PSK"}:
+                if m_order < 2 or (m_order & (m_order - 1)) != 0:
+                    raise ValueError("Para M-PSK, M debe ser potencia de 2 (>=2)")
+            if not (1 <= n_bits <= 24):
+                raise ValueError("n_bits (Formateo) debe estar entre 1 y 24")
             if quantizer not in {"alaw", "uniform"}:
                 raise ValueError("quantizer (Formateo) inválido")
             if source not in {"audio", "text"}:
@@ -679,7 +795,8 @@ def create_app() -> Flask:
                         audit["text_error"] = str(_e)
 
                 _write_json(out_dir_use / "params.json", {
-                    "lab2": {"modulation": mod, "sps": sps, "rolloff": alpha, "span": span, "seed": seed},
+                    "lab2": {"modulation": mod, "m_order": m_order, "sps": sps, "rolloff": alpha, "span": span, "seed": seed,
+                             "isi_sps_deltas": list(isi_sps_deltas)},
                     "lab1": {"audio": audio, "text": text, "fs": fs, "n_bits": n_bits, "quantizer": quantizer,
                              "source": src, "method": method_use, "lfsr_seed": l1_seed,
                              "lfsr_taps": list(l1_taps), "lfsr_bitwidth": l1_bitwidth},
@@ -689,11 +806,13 @@ def create_app() -> Flask:
                 })
 
                 params = lab2_rrc.Lab2Params(
-                    out_dir=str(out_dir_use), n_bits=len(bits_local), modulation=mod, sps=sps, rolloff=alpha, span=span, seed=seed
+                    out_dir=str(out_dir_use), n_bits=len(bits_local), modulation=mod, m_order=m_order, sps=sps, rolloff=alpha, span=span,
+                    seed=seed, isi_sps_deltas=isi_sps_deltas
                 )
                 paths = lab2_rrc.run_lab2(params, bits=_np.array(bits_local, dtype=_np.uint8))
                 _write_json(out_dir_use / "params.json", {
-                    "lab2": {"modulation": mod, "sps": sps, "rolloff": alpha, "span": span, "seed": seed},
+                    "lab2": {"modulation": mod, "m_order": m_order, "sps": sps, "rolloff": alpha, "span": span, "seed": seed,
+                             "isi_sps_deltas": list(isi_sps_deltas)},
                     "lab1": {"audio": audio, "text": text, "fs": fs, "n_bits": n_bits, "quantizer": quantizer,
                              "source": src, "method": method_use, "lfsr_seed": l1_seed,
                              "lfsr_taps": list(l1_taps), "lfsr_bitwidth": l1_bitwidth},
@@ -740,6 +859,7 @@ def create_app() -> Flask:
         text = data.get("text") or DEFAULTS["text"]
         base_out = data.get("out") or DEFAULTS["out_lab1"]
         fs = int(data.get("fs") or 16000)
+        bw_hz = float(data.get("bw_hz") or DEFAULTS["bw_hz"])
         n_bits = int(data.get("n_bits") or 8)
         quantizer = data.get("quantizer") or "alaw"
         lfsr_seed = _parse_int_auto(data.get("lfsr_seed"), int("0b1010110011", 2))
@@ -755,16 +875,26 @@ def create_app() -> Flask:
         out_dir = str(_ts_dir(Path(base_out)))
         try:
             _validate_lab1_inputs(audio, text, out_dir, fs, n_bits, quantizer, source,
-                                  lfsr_seed, lfsr_bitwidth, hist_bins, entropy_step_a, entropy_step_b, lfsr_taps)
+                                  lfsr_seed, lfsr_bitwidth, hist_bins, entropy_step_a, entropy_step_b, lfsr_taps, bw_hz)
             figdir = lab1.ensure_dirs(out_dir)
             rows = []
             if source == "audio":
                 rows.extend(lab1.process_audio(audio, figdir, fs_target=fs, n_bits=n_bits, quantizer=quantizer,
                                                lfsr_seed=lfsr_seed, lfsr_taps=lfsr_taps, lfsr_bitwidth=lfsr_bitwidth,
                                                hist_bins=hist_bins, entropy_step=entropy_step_a))
+                try:
+                    x, _ = lab1.load_wav_mono(audio, target_fs=fs)
+                    _generate_quantization_quality_plots(Path(out_dir), x, n_bits)
+                    _generate_shannon_theory_plots(Path(out_dir), bw_hz=bw_hz, rb_bps=float(fs * n_bits))
+                except Exception:
+                    pass
             else:
                 rows.extend(lab1.process_text(text, figdir, lfsr_seed=lfsr_seed, lfsr_taps=lfsr_taps,
                                               lfsr_bitwidth=lfsr_bitwidth, entropy_step=entropy_step_b))
+                try:
+                    _generate_shannon_theory_plots(Path(out_dir), bw_hz=bw_hz, rb_bps=None)
+                except Exception:
+                    pass
             lab1_report.save_metrics_csv(out_dir, rows)
             lab1_report.write_markdown(out_dir)
             try:
@@ -777,6 +907,7 @@ def create_app() -> Flask:
                 "audio": audio,
                 "text": text,
                 "fs": fs,
+                "bw_hz": bw_hz,
                 "n_bits": n_bits,
                 "quantizer": quantizer,
                 "lfsr_seed": lfsr_seed,
@@ -847,6 +978,9 @@ def create_app() -> Flask:
         eb_end: float,
         eb_step: float,
         trials: int,
+        theory_points: int,
+        use_rx_rrc: bool,
+        timing_offset_ts: float,
         sps: int,
         seed: int,
         channel_mode: str,
@@ -883,15 +1017,18 @@ def create_app() -> Flask:
                     progress_cb(i - 1, total, rel)
                 out_sub = Path(out_dir) / rel
                 out_sub.mkdir(parents=True, exist_ok=True)
-                _ = lab3_demod.run_simulation_from_file(
+                res_run = lab3_demod.run_simulation_from_file(
                     lab2_dir=str(rdir),
                     out_dir=str(out_sub),
                     ebn0_start=eb_start,
                     ebn0_end=eb_end,
                     ebn0_step=eb_step,
                     trials_per_ebn0=trials,
+                    theory_points=theory_points,
                     seed=seed,
                     channel_mode=channel_mode,
+                    use_rx_rrc=use_rx_rrc,
+                    timing_offset_ts=timing_offset_ts,
                     cancel_cb=cancel_cb,
                 )
                 try:
@@ -907,6 +1044,11 @@ def create_app() -> Flask:
                     "out_dir": str(out_sub),
                     "ber_plot": str(ber_plot) if ber_plot.exists() else None,
                     "ber_csv": str(ber_csv) if ber_csv.exists() else None,
+                    "modulation": res_run.get("modulation"),
+                    "m_order": res_run.get("m_order"),
+                    "sps": res_run.get("sps"),
+                    "rolloff": res_run.get("rolloff"),
+                    "span": res_run.get("span"),
                 })
 
             if progress_cb:
@@ -921,16 +1063,21 @@ def create_app() -> Flask:
                 "mode": "lab2_chain_multi",
                 "lab2_path": str(l2_base),
                 "n_bits": n_bits,
-                "modulation": mod,
+                "modulation": "multi",
+                "m_order": None,
                 "eb_start": eb_start,
                 "eb_end": eb_end,
                 "eb_step": eb_step,
                 "trials_per_ebn0": trials,
+                "theory_points": theory_points,
+                "use_rx_rrc": bool(use_rx_rrc),
+                "timing_offset_ts": float(timing_offset_ts),
                 "sps": sps,
                 "seed": seed,
                 "channel_mode": channel_mode,
                 "out": out_dir,
-                "runs": [r[0] for r in runs]
+                "runs": [r[0] for r in runs],
+                "run_configs": runs_meta,
             })
 
             _append_log(Path(out_dir) / "run_log.txt", f"Canal y Rx run OK: mode=lab2_chain_multi runs={len(runs_meta)}")
@@ -940,15 +1087,18 @@ def create_app() -> Flask:
         rdir = runs[0][1]
         if cancel_cb and cancel_cb():
             raise InterruptedError("Cancelado por el usuario")
-        _ = lab3_demod.run_simulation_from_file(
+        res_single = lab3_demod.run_simulation_from_file(
             lab2_dir=str(rdir),
             out_dir=out_dir,
             ebn0_start=eb_start,
             ebn0_end=eb_end,
             ebn0_step=eb_step,
             trials_per_ebn0=trials,
+            theory_points=theory_points,
             seed=seed,
             channel_mode=channel_mode,
+            use_rx_rrc=use_rx_rrc,
+            timing_offset_ts=timing_offset_ts,
             cancel_cb=cancel_cb,
         )
 
@@ -956,12 +1106,18 @@ def create_app() -> Flask:
             "mode": "lab2_chain" if use_l2_chain else "standalone",
             "lab2_path": str(rdir) if use_l2_chain else None,
             "n_bits": n_bits,
-            "modulation": mod,
+            "modulation": res_single.get("modulation", mod),
+            "m_order": res_single.get("m_order"),
             "eb_start": eb_start,
             "eb_end": eb_end,
             "eb_step": eb_step,
             "trials_per_ebn0": trials,
-            "sps": sps,
+            "theory_points": theory_points,
+            "use_rx_rrc": bool(use_rx_rrc),
+            "timing_offset_ts": float(timing_offset_ts),
+            "sps": res_single.get("sps", sps),
+            "rolloff": res_single.get("rolloff"),
+            "span": res_single.get("span"),
             "seed": seed,
             "channel_mode": channel_mode,
             "out": out_dir
@@ -993,6 +1149,9 @@ def create_app() -> Flask:
         eb_end = float(request.values.get("eb_end") or 12.0)
         eb_step = float(request.values.get("eb_step") or 2.0)
         trials = int(request.values.get("trials_per_ebn0") or 20)
+        theory_points = int(request.values.get("theory_points") or 300)
+        use_rx_rrc = str(request.values.get("use_rx_rrc") or "").lower() in {"1", "true", "on", "yes"}
+        timing_offset_ts = float(request.values.get("timing_offset_ts") or 0.0)
         sps = 8
         seed = 42
         channel_mode = (request.values.get("channel_mode") or "awgn").strip().lower()
@@ -1008,6 +1167,9 @@ def create_app() -> Flask:
                 eb_end=eb_end,
                 eb_step=eb_step,
                 trials=trials,
+                theory_points=theory_points,
+                use_rx_rrc=use_rx_rrc,
+                timing_offset_ts=timing_offset_ts,
                 sps=sps,
                 seed=seed,
                 channel_mode=channel_mode,
@@ -1030,6 +1192,9 @@ def create_app() -> Flask:
         eb_end = float(data.get("eb_end") or 12.0)
         eb_step = float(data.get("eb_step") or 2.0)
         trials = int(data.get("trials_per_ebn0") or 20)
+        theory_points = int(data.get("theory_points") or 300)
+        use_rx_rrc = str(data.get("use_rx_rrc") or "").lower() in {"1", "true", "on", "yes"}
+        timing_offset_ts = float(data.get("timing_offset_ts") or 0.0)
         sps = 8
         seed = 42
         channel_mode = (data.get("channel_mode") or "awgn").strip().lower()
@@ -1062,6 +1227,9 @@ def create_app() -> Flask:
                     eb_end=eb_end,
                     eb_step=eb_step,
                     trials=trials,
+                    theory_points=theory_points,
+                    use_rx_rrc=use_rx_rrc,
+                    timing_offset_ts=timing_offset_ts,
                     sps=sps,
                     seed=seed,
                     channel_mode=channel_mode,
@@ -1137,6 +1305,8 @@ def create_app() -> Flask:
         text_rx_preview = None
         text_tx_preview = None
         recovery_ebn0_db = None
+        ber_rows = []
+        ber_context = {}
 
         params_file = p / "params.json"
         if params_file.exists():
@@ -1150,10 +1320,13 @@ def create_app() -> Flask:
             recovery_ebn0_db = summary.get("diag_ebn0_db")
         elif summary.get("eb_start") is not None:
             recovery_ebn0_db = summary.get("eb_start")
+        summary.setdefault("use_rx_rrc", True)
+        summary.setdefault("timing_offset_ts", 0.0)
 
         for name in [
             "tx_rx_constellations.png",
             "rx_time.png",
+            "rx_downsampling.png",
             "rx_constellation.png",
             "rx_eye.png",
             "mf_impulse.png",
@@ -1179,6 +1352,39 @@ def create_app() -> Flask:
         ber_plot_path = p / "ber_curve.png"
         ber_plot = str(ber_plot_path) if ber_plot_path.exists() else None
         ber_csv = "ber_results.csv" if (p / "ber_results.csv").exists() else None
+
+        ber_csv_path = p / "ber_results.csv"
+        if ber_csv_path.exists():
+            try:
+                with open(ber_csv_path, "r", encoding="utf-8", newline="") as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        ber_rows.append({
+                            "ebn0_target_db": float(row.get("EbN0_Target_dB", 0.0)),
+                            "ber_sim": float(row.get("BER_Sim", 0.0)),
+                            "ber_theory": float(row.get("BER_Theory", 0.0)),
+                            "ber_std": float(row.get("BER_Std_MonteCarlo", 0.0)),
+                            "ber_ci95": float(row.get("BER_CI95_MonteCarlo", 0.0)),
+                            "ebn0_est_mean_db": float(row.get("EbN0_Est_Mean_dB", 0.0)),
+                            "ebn0_est_std_db": float(row.get("EbN0_Est_Std_dB", 0.0)),
+                            "trials": int(float(row.get("Trials", 0) or 0)),
+                        })
+            except Exception:
+                ber_rows = []
+
+        if ber_rows:
+            ber_context = {
+                "eb_start": ber_rows[0]["ebn0_target_db"],
+                "eb_end": ber_rows[-1]["ebn0_target_db"],
+                "eb_step": summary.get("eb_step"),
+                "sim_points": len(ber_rows),
+                "theory_points": int(summary.get("theory_points") or 300),
+                "trials_per_ebn0": int(summary.get("trials_per_ebn0") or ber_rows[0]["trials"]),
+                "modulation": summary.get("modulation"),
+                "m_order": summary.get("m_order"),
+                "use_rx_rrc": bool(summary.get("use_rx_rrc", True)),
+                "timing_offset_ts": float(summary.get("timing_offset_ts") or 0.0),
+            }
         
         other = []
         for name in [
@@ -1221,6 +1427,8 @@ def create_app() -> Flask:
             text_rx_preview=text_rx_preview,
             text_tx_preview=text_tx_preview,
             recovery_ebn0_db=recovery_ebn0_db,
+            ber_rows=ber_rows,
+            ber_context=ber_context,
         )
 
 
@@ -1236,11 +1444,20 @@ def create_app() -> Flask:
                 l2_path = data["lab2_path"]
                 ebn0 = float(data.get("ebn0", 10.0))
                 channel_mode = (data.get("channel_mode") or "awgn").strip().lower()
+                use_rx_rrc = str(data.get("use_rx_rrc") or "").lower() in {"1", "true", "on", "yes"}
+                timing_offset_ts = float(data.get("timing_offset_ts") or 0.0)
                 # Output dir
                 out_base = data.get("out") or DEFAULTS["out_lab3"]
                 out_ts = _ts_dir(Path(out_base))
                 
-                res = lab3_demod.run_from_file(l2_path, ebn0, str(out_ts), channel_mode=channel_mode)
+                res = lab3_demod.run_from_file(
+                    l2_path,
+                    ebn0,
+                    str(out_ts),
+                    channel_mode=channel_mode,
+                    use_rx_rrc=use_rx_rrc,
+                    timing_offset_ts=timing_offset_ts,
+                )
                 # Add relative paths for UI
                 gen = {}
                 for k, v in res["paths"].items():
@@ -1261,12 +1478,15 @@ def create_app() -> Flask:
         
         # Params
         mod = (data.get("modulation") or "QPSK").upper()
+        m_order = int(data.get("m_order") or 4)
         sps = int(data.get("sps") or 8)
         alpha = float(data.get("rolloff") if data.get("rolloff") is not None else (data.get("alpha") or 0.25))
         span = int(data.get("span") or 8)
         seed = int(data.get("seed") or 42)
         ebn0 = float(data.get("ebn0") or 10.0)
         channel_mode = (data.get("channel_mode") or "awgn").strip().lower()
+        use_rx_rrc = str(data.get("use_rx_rrc") or "").lower() in {"1", "true", "on", "yes"}
+        timing_offset_ts = float(data.get("timing_offset_ts") or 0.0)
         
         # Lab1 bits integration
         l1 = data.get("lab1") or {}
@@ -1308,16 +1528,24 @@ def create_app() -> Flask:
         n_bits_sim = len(bits) if bits else int(data.get("n_bits") or 10000)
         
         try:
+            if mod not in {"BPSK", "QPSK", "MPSK", "M-PSK"}:
+                raise ValueError("Modulación no soportada (use BPSK, QPSK o M-PSK)")
+            if mod in {"MPSK", "M-PSK"}:
+                if m_order < 2 or (m_order & (m_order - 1)) != 0:
+                    raise ValueError("Para M-PSK, M debe ser potencia de 2 y >= 2")
             params = lab3_demod.Lab3Params(
                 out_dir=str(base_abs),
                 n_bits=n_bits_sim,
                 modulation=mod,
+                m_order=m_order,
                 sps=sps,
                 rolloff=alpha,
                 span=span,
                 ebn0_start=ebn0, # Use start as THE value for single run
                 seed=seed,
                 channel_mode=channel_mode,
+                use_rx_rrc=use_rx_rrc,
+                timing_offset_ts=timing_offset_ts,
             )
             
             import numpy as _np
@@ -1349,14 +1577,24 @@ def create_app() -> Flask:
         base_out = data.get("out_dir") or DEFAULTS["out_lab2"]
         out_dir = str(_ts_dir(Path(base_out)))
         mod = (data.get("modulation") or "QPSK").upper()
+        m_order = int(data.get("m_order") or 4)
         n_bits = int(data.get("n_bits") or 2000)
         sps = int(data.get("sps") or 8)
         alpha = float(data.get("alpha") or data.get("rolloff") or 0.25)
         span = int(data.get("span") or 8)
         seed = int(data.get("seed") or 0)
         try:
-            params = lab2_rrc.Lab2Params(out_dir=out_dir, n_bits=n_bits, modulation=mod, sps=sps, rolloff=alpha, span=span, seed=seed)
+            if mod not in {"BPSK", "QPSK", "MPSK", "M-PSK"}:
+                raise ValueError("Modulación no soportada (use BPSK, QPSK o M-PSK)")
+            if mod in {"MPSK", "M-PSK"}:
+                if m_order < 2 or (m_order & (m_order - 1)) != 0:
+                    raise ValueError("Para M-PSK, M debe ser potencia de 2 (>=2)")
+            params = lab2_rrc.Lab2Params(out_dir=out_dir, n_bits=n_bits, modulation=mod, m_order=m_order, sps=sps, rolloff=alpha, span=span, seed=seed)
             paths = lab2_rrc.run_lab2(params)
+            try:
+                _generate_shannon_theory_plots(Path(out_dir), bw_hz=100_000.0, rb_bps=None)
+            except Exception:
+                pass
             gen = {}
             for k, v in paths.items():
                 p = Path(v)

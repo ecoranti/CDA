@@ -73,14 +73,32 @@
       <select name="modulation" id="mod_modulation">
         <option>BPSK</option>
         <option selected>QPSK</option>
+        <option value="MPSK">M-PSK (genérica)</option>
       </select>
-      <span class="muted">BPSK: 1 bit/símbolo. QPSK: 2 bits/símbolo, misma BER que BPSK pero doble eficiencia espectral.</span>
+      <span class="muted">BPSK: 1 bit/símbolo. QPSK: 2 bits/símbolo. M-PSK: k=log₂(M) bits/símbolo.</span>
+    </div>
+
+    <div class="field">
+      <label>Orden M (solo para M-PSK)</label>
+      <input id="mod_m_order" type="number" value="8" min="2" step="2" disabled>
+      <span class="muted">Usar potencias de 2 (2, 4, 8, 16, ...).</span>
     </div>
 
     <div class="field">
       <label>Samples por símbolo (sps)</label>
       <input id="mod_sps" type="number" value="8">
       <span class="muted">Factor de oversampling. sps=8 → 8 muestras IQ por símbolo. Mínimo recomendado: 4.</span>
+    </div>
+
+    <div class="field">
+      <label>ΔSPS extras para análisis ISI (hasta 4)</label>
+      <div style="display:grid; grid-template-columns: repeat(4, minmax(64px, 1fr)); gap:8px;">
+        <input id="mod_sps_delta1" type="number" value="0" min="0" placeholder="+2">
+        <input id="mod_sps_delta2" type="number" value="0" min="0" placeholder="+4">
+        <input id="mod_sps_delta3" type="number" value="0" min="0" placeholder="+8">
+        <input id="mod_sps_delta4" type="number" value="0" min="0" placeholder="+12">
+      </div>
+      <span class="muted">Se evalúa ISImax para <code>sps</code> principal y para <code>sps+Δ</code> en cada valor extra positivo.</span>
     </div>
 
     <div class="field">
@@ -203,11 +221,18 @@
   function getFormVals() {
     return {
       modulation: document.getElementById('mod_modulation').value,
+      m_order: parseInt(document.getElementById('mod_m_order').value || '4', 10),
       sps: parseInt(document.getElementById('mod_sps').value || '8', 10),
       n_bits: 2000,
       alpha: parseFloat(document.getElementById('mod_alpha').value || '0.25'),
       span: parseInt(document.getElementById('mod_span').value || '8', 10),
       out: normalizeOutputBase(document.getElementById('mod_out').value),
+      isi_sps_deltas: [
+        parseInt(document.getElementById('mod_sps_delta1').value || '0', 10),
+        parseInt(document.getElementById('mod_sps_delta2').value || '0', 10),
+        parseInt(document.getElementById('mod_sps_delta3').value || '0', 10),
+        parseInt(document.getElementById('mod_sps_delta4').value || '0', 10),
+      ],
     };
   }
   function saveLab2ToLS() { lsSet('lab2_params', getFormVals()); }
@@ -215,10 +240,17 @@
     const v = lsGet('lab2_params', null);
     if (!v) return;
     if (v.modulation != null) document.getElementById('mod_modulation').value = v.modulation;
+    if (v.m_order != null) document.getElementById('mod_m_order').value = v.m_order;
     if (v.sps != null) document.getElementById('mod_sps').value = v.sps;
     if (v.alpha != null) document.getElementById('mod_alpha').value = v.alpha;
     if (v.span != null) document.getElementById('mod_span').value = v.span;
     if (v.out != null) document.getElementById('mod_out').value = normalizeOutputBase(v.out);
+    if (Array.isArray(v.isi_sps_deltas)) {
+      document.getElementById('mod_sps_delta1').value = v.isi_sps_deltas[0] ?? 0;
+      document.getElementById('mod_sps_delta2').value = v.isi_sps_deltas[1] ?? 0;
+      document.getElementById('mod_sps_delta3').value = v.isi_sps_deltas[2] ?? 0;
+      document.getElementById('mod_sps_delta4').value = v.isi_sps_deltas[3] ?? 0;
+    }
   }
 
   function updateAlphaHint() {
@@ -238,6 +270,14 @@
       comment = `α=${a.toFixed(2)} → máximo exceso de ancho de banda y mayor robustez temporal.`;
     }
     hint.textContent = `Exceso de BW: BW = (1+α)·Rs/2. ${comment}`;
+  }
+
+  function updateModulationUi() {
+    const modEl = document.getElementById('mod_modulation');
+    const mEl = document.getElementById('mod_m_order');
+    if (!modEl || !mEl) return;
+    const mod = String(modEl.value || '').toUpperCase();
+    mEl.disabled = !(mod === 'MPSK' || mod === 'M-PSK');
   }
 
   /* ── leer formulario de Formateo ── */
@@ -333,7 +373,7 @@
   }
 
   function buildLab2ResultsHtml(paths) {
-    const imgs = ['iq_time_png', 'constellation_symbols_png', 'constellation_shaped_png', 'spectrum_png', 'rrc_impulse_png', 'eye_png', 'bits_iq_transition_png'];
+    const imgs = ['iq_time_png', 'constellation_symbols_png', 'constellation_shaped_png', 'spectrum_png', 'rrc_impulse_png', 'eye_png', 'bits_iq_transition_png', 'isi_vs_sps_png'];
     const bust = Date.now();
     let html = '<div class="figs">';
     for (const k of imgs) {
@@ -436,10 +476,13 @@
     loadLab1FromLS();
     loadLab2FromLS();
     updateAlphaHint();
-    ['mod_modulation', 'mod_sps', 'mod_alpha', 'mod_span', 'mod_out'].forEach(id => {
+    updateModulationUi();
+    ['mod_modulation', 'mod_m_order', 'mod_sps', 'mod_alpha', 'mod_span', 'mod_out', 'mod_sps_delta1', 'mod_sps_delta2', 'mod_sps_delta3', 'mod_sps_delta4'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.addEventListener('change', saveLab2ToLS);
     });
+    const modEl = document.getElementById('mod_modulation');
+    if (modEl) modEl.addEventListener('change', updateModulationUi);
     const alphaEl = document.getElementById('mod_alpha');
     if (alphaEl) {
       alphaEl.addEventListener('change', updateAlphaHint);

@@ -25,7 +25,7 @@
     label { font-size: 12px; color: #334155; margin-bottom: 4px; }
     input, select { padding: 8px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; }
     .figs { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
-    .figs img { width: 100%; height: auto; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; }
+    .figs img { width: 100%; height: auto; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; cursor: zoom-in; }
     .flash { padding: 10px; border-radius: 8px; margin-bottom: 14px; }
     .flash.warning { background: #fff7ed; border: 1px solid #fed7aa; }
     .flash.error { background: #fef2f2; border: 1px solid #fecaca; }
@@ -62,6 +62,29 @@
     .overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.7); display: none; align-items: center; justify-content: center; z-index: 1000; }
     .spinner { width: 42px; height: 42px; border: 4px solid #cbd5e1; border-top-color: #3b82f6; border-radius: 50%; animation: spin 0.8s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Visor interactivo de figuras */
+    .img-viewer { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.82); display: none; align-items: center; justify-content: center; z-index: 2000; }
+    .img-viewer.open { display: flex; }
+    .img-viewer-toolbar {
+      position: absolute; top: 14px; right: 14px; display: flex; gap: 8px;
+      background: rgba(255,255,255,0.92); border: 1px solid #d1d5db; border-radius: 10px; padding: 6px;
+    }
+    .img-viewer-btn {
+      border: 1px solid #cbd5e1; background: #fff; color: #111; border-radius: 8px;
+      min-width: 34px; min-height: 34px; font-size: 16px; cursor: pointer; line-height: 1;
+    }
+    .img-viewer-stage {
+      width: min(94vw, 1800px); height: min(88vh, 1100px); overflow: hidden;
+      border-radius: 10px; border: 1px solid rgba(255,255,255,0.28); background: #0b1220;
+      display: flex; align-items: center; justify-content: center; cursor: grab;
+    }
+    .img-viewer-stage.dragging { cursor: grabbing; }
+    .img-viewer-img {
+      max-width: 100%; max-height: 100%;
+      transform-origin: center center;
+      user-select: none; -webkit-user-drag: none; pointer-events: none;
+    }
     @media (max-width: 720px) {
       .site-head { flex-direction:column; align-items:flex-start; }
       .site-logos img { width:34px; height:34px; }
@@ -99,6 +122,17 @@
     {% endwith %}
     {% block content %}{% endblock %}
   </main>
+  <div id="imgViewer" class="img-viewer" aria-hidden="true">
+    <div class="img-viewer-toolbar">
+      <button id="imgZoomOut" class="img-viewer-btn" type="button" title="Alejar">−</button>
+      <button id="imgZoomIn" class="img-viewer-btn" type="button" title="Acercar">+</button>
+      <button id="imgReset" class="img-viewer-btn" type="button" title="Reiniciar">⟲</button>
+      <button id="imgClose" class="img-viewer-btn" type="button" title="Cerrar">✕</button>
+    </div>
+    <div id="imgStage" class="img-viewer-stage">
+      <img id="imgViewerImg" class="img-viewer-img" alt="Vista ampliada">
+    </div>
+  </div>
   <script>
     function showOverlay() { const el = document.getElementById('overlay'); if (el) el.style.display = 'flex'; }
     function hideOverlay() { const el = document.getElementById('overlay'); if (el) el.style.display = 'none'; }
@@ -139,6 +173,86 @@
     window.addEventListener('DOMContentLoaded', () => {
       document.querySelectorAll('form').forEach(form => {
         form.addEventListener('submit', () => { showOverlay(); });
+      });
+
+      // Visor interactivo para figuras (zoom + paneo)
+      const viewer = document.getElementById('imgViewer');
+      const stage = document.getElementById('imgStage');
+      const img = document.getElementById('imgViewerImg');
+      const btnClose = document.getElementById('imgClose');
+      const btnReset = document.getElementById('imgReset');
+      const btnIn = document.getElementById('imgZoomIn');
+      const btnOut = document.getElementById('imgZoomOut');
+      let scale = 1, tx = 0, ty = 0;
+      let dragging = false, lastX = 0, lastY = 0;
+
+      function applyTransform() {
+        img.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
+      }
+      function resetTransform() {
+        scale = 1; tx = 0; ty = 0; applyTransform();
+      }
+      function zoomAt(factor, cx, cy) {
+        const prev = scale;
+        scale = Math.max(0.25, Math.min(12, scale * factor));
+        if (scale === prev) return;
+        tx = cx - (cx - tx) * (scale / prev);
+        ty = cy - (cy - ty) * (scale / prev);
+        applyTransform();
+      }
+      function openViewer(src, alt){
+        img.src = src;
+        img.alt = alt || 'Figura';
+        resetTransform();
+        viewer.classList.add('open');
+        viewer.setAttribute('aria-hidden', 'false');
+      }
+      function closeViewer(){
+        viewer.classList.remove('open');
+        viewer.setAttribute('aria-hidden', 'true');
+      }
+
+      document.querySelectorAll('.figs img').forEach(el => {
+        if (el.dataset && el.dataset.noViewer === '1') return;
+        el.addEventListener('click', () => openViewer(el.src, el.alt || 'Figura'));
+      });
+
+      btnClose?.addEventListener('click', closeViewer);
+      btnReset?.addEventListener('click', resetTransform);
+      btnIn?.addEventListener('click', () => zoomAt(1.2, 0, 0));
+      btnOut?.addEventListener('click', () => zoomAt(1/1.2, 0, 0));
+
+      viewer?.addEventListener('click', (e) => {
+        if (e.target === viewer) closeViewer();
+      });
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && viewer.classList.contains('open')) closeViewer();
+      });
+
+      stage?.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const rect = stage.getBoundingClientRect();
+        const cx = e.clientX - rect.left - rect.width / 2;
+        const cy = e.clientY - rect.top - rect.height / 2;
+        const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+        zoomAt(factor, cx, cy);
+      }, { passive: false });
+
+      stage?.addEventListener('mousedown', (e) => {
+        dragging = true;
+        lastX = e.clientX; lastY = e.clientY;
+        stage.classList.add('dragging');
+      });
+      window.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        tx += e.clientX - lastX;
+        ty += e.clientY - lastY;
+        lastX = e.clientX; lastY = e.clientY;
+        applyTransform();
+      });
+      window.addEventListener('mouseup', () => {
+        dragging = false;
+        stage?.classList.remove('dragging');
       });
     });
   </script>

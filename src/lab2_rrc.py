@@ -70,7 +70,28 @@ def rrc_taps(alpha: float, sps: int, span: int) -> np.ndarray:
     return taps.astype(np.float64)
 
 
-def map_bits_to_symbols(bits: np.ndarray, mod: str = "BPSK") -> np.ndarray:
+def _validate_m_order(m_order: int) -> int:
+    M = int(m_order)
+    if M < 2:
+        raise ValueError("M debe ser >= 2")
+    if M & (M - 1):
+        raise ValueError("M debe ser potencia de 2")
+    return M
+
+
+def _bits_per_symbol(mod: str, m_order: int = 4) -> int:
+    mode = (mod or "QPSK").upper()
+    if mode == "BPSK":
+        return 1
+    if mode == "QPSK":
+        return 2
+    if mode in {"MPSK", "M-PSK"}:
+        M = _validate_m_order(m_order)
+        return int(np.log2(M))
+    raise ValueError("Modulación no soportada. Use 'BPSK', 'QPSK' o 'MPSK'.")
+
+
+def map_bits_to_symbols(bits: np.ndarray, mod: str = "BPSK", m_order: int = 4) -> np.ndarray:
     bits = np.asarray(bits).astype(np.uint8).ravel()
     mod = mod.upper()
     if mod == "BPSK":
@@ -85,8 +106,21 @@ def map_bits_to_symbols(bits: np.ndarray, mod: str = "BPSK") -> np.ndarray:
         Q = np.where(b1 == 0, 1.0, -1.0)
         c = (I + 1j * Q) / np.sqrt(2.0)
         return c.astype(np.complex128)
+    elif mod in {"MPSK", "M-PSK"}:
+        M = _validate_m_order(m_order)
+        k = int(np.log2(M))
+        if bits.size % k != 0:
+            pad = k - (bits.size % k)
+            bits = np.pad(bits, (0, pad), constant_values=0)
+        groups = bits.reshape(-1, k)
+        # Interpretación MSB->LSB para construir el índice de símbolo
+        powers = (1 << np.arange(k - 1, -1, -1, dtype=np.int64))
+        idx = groups.dot(powers).astype(np.int64)
+        angles = 2.0 * np.pi * idx / float(M)
+        c = np.exp(1j * angles)
+        return c.astype(np.complex128)
     else:
-        raise ValueError("Modulación no soportada. Use 'BPSK' o 'QPSK'.")
+        raise ValueError("Modulación no soportada. Use 'BPSK', 'QPSK' o 'MPSK'.")
 
 
 def upsample_and_filter(symbols: np.ndarray, sps: int, taps: np.ndarray) -> np.ndarray:
@@ -254,14 +288,13 @@ def plot_eye(iq: np.ndarray, sps: int, out_path: str, span_symbols: int = 2, max
     plt.close()
 
 
-def plot_bits_and_iq(bits: np.ndarray, y: np.ndarray, sps: int, modulation: str, out_path: str, max_symbols: int = 120) -> None:
+def plot_bits_and_iq(bits: np.ndarray, y: np.ndarray, sps: int, modulation: str, out_path: str, max_symbols: int = 120, m_order: int = 4) -> None:
     """Grafica, alineados en tiempo simbólico, un segmento de bits (arriba) y la señal IQ (abajo).
     Para BPSK se usan 1 bit/símbolo; para QPSK, 2 bits/símbolo.
     """
     if bits is None or len(bits) == 0 or y is None or len(y) == 0:
         return
-    mod = (modulation or "QPSK").upper()
-    bps = 1 if mod == "BPSK" else 2
+    bps = _bits_per_symbol(modulation, m_order=m_order)
     total_symbols = len(y) // sps
     usable_symbols = min(max_symbols, total_symbols, (len(bits) + bps - 1) // bps)
     if usable_symbols <= 0:
@@ -459,17 +492,76 @@ def plot_two_symbol_rrc_contributions(symbols: np.ndarray, sps: int, taps: np.nd
     plt.savefig(out_path, dpi=140)
     plt.close()
 
+
+def _isi_max_db(alpha: float, sps: int, span: int) -> float:
+    """Calcula ISI máximo residual (dB) del pulso equivalente RC = RRC * RRC."""
+    taps = rrc_taps(alpha, sps, span).astype(np.float64)
+    g = np.convolve(taps, taps, mode="full")
+    c = (g.size - 1) // 2
+    main = float(np.abs(g[c])) + 1e-15
+    max_k = (g.size - 1) // (2 * sps)
+    if max_k <= 0:
+        return -120.0
+    isi_peaks = []
+    for k in range(-max_k, max_k + 1):
+        if k == 0:
+            continue
+        idx = c + k * sps
+        if 0 <= idx < g.size:
+            isi_peaks.append(float(np.abs(g[idx])))
+    if not isi_peaks:
+        return -120.0
+    ratio = (max(isi_peaks) + 1e-15) / main
+    return float(20.0 * np.log10(ratio))
+
+
+def plot_isi_vs_sps(alpha: float, span: int, sps_values: list[int], out_path: str) -> None:
+    """Grafica ISImax vs SPS con familia de curvas (una por span)."""
+    xs = sorted({int(v) for v in sps_values if int(v) > 0})
+    if not xs:
+        return
+
+    # Familia de spans alrededor del principal (estilo comparativo tipo informe).
+    base_candidates = [4, 8, 12, 16, 20, 24, 28, 32]
+    span_set = {int(span)}
+    for s in base_candidates:
+        if s <= int(span) + 16:
+            span_set.add(int(s))
+    spans = sorted(v for v in span_set if v >= 2)
+
+    plt.figure(figsize=(7.0, 4.8))
+    for sp in spans:
+        ys = []
+        for sps in xs:
+            try:
+                ys.append(_isi_max_db(alpha, sps, sp))
+            except Exception:
+                ys.append(np.nan)
+        plt.plot(xs, ys, marker="o", linewidth=1.6, label=f"span={sp}")
+
+    plt.axhline(-56.0, color="#64748b", linestyle="--", linewidth=1.0, label="umbral -56 dB")
+    plt.grid(True, alpha=0.25)
+    plt.xlabel("L (SPS)")
+    plt.ylabel("ISImax [dB]")
+    plt.title(f"ISImax vs L (r={alpha:.2f})")
+    plt.legend(loc="best", fontsize=8, ncol=2)
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=140)
+    plt.close()
+
 @dataclass
 class Lab2Params:
     out_dir: str
     n_bits: int = 2000
     modulation: str = "QPSK"
+    m_order: int = 4
     sps: int = 8
     rolloff: float = 0.25
     span: int = 8
     seed: int = 0
     eye_span: int = 2
     eye_traces: int = 300
+    isi_sps_deltas: tuple[int, int, int, int] = (0, 0, 0, 0)
 
 
 def run_lab2(params: Lab2Params, bits: np.ndarray | None = None) -> Dict[str, str]:
@@ -477,7 +569,7 @@ def run_lab2(params: Lab2Params, bits: np.ndarray | None = None) -> Dict[str, st
     if bits is None:
         rng = np.random.default_rng(params.seed)
         bits = rng.integers(0, 2, size=params.n_bits, dtype=np.uint8)
-    syms = map_bits_to_symbols(bits, params.modulation)
+    syms = map_bits_to_symbols(bits, params.modulation, m_order=params.m_order)
     taps = rrc_taps(params.rolloff, params.sps, params.span)
     iq = upsample_and_filter(syms, params.sps, taps)
     paths = {
@@ -496,6 +588,7 @@ def run_lab2(params: Lab2Params, bits: np.ndarray | None = None) -> Dict[str, st
         "rrc_discrete_upsampling_png": os.path.join(params.out_dir, "rrc_discrete_upsampling.png"),
         "rrc_discrete_shaping_png": os.path.join(params.out_dir, "rrc_discrete_shaping.png"),
         "rrc_two_symbols_png": os.path.join(params.out_dir, "rrc_two_symbols.png"),
+        "isi_vs_sps_png": os.path.join(params.out_dir, "isi_vs_sps.png"),
     }
     # Guardar parámetros (si se pasaron bits explícitos, reflejar su longitud)
     p = asdict(params)
@@ -517,7 +610,7 @@ def run_lab2(params: Lab2Params, bits: np.ndarray | None = None) -> Dict[str, st
     eye_tr = max(10, int(params.eye_traces))
     plot_eye(iq, params.sps, paths["eye_png"], span_symbols=eye_span, max_traces=eye_tr)
     try:
-        plot_bits_and_iq(bits, iq, params.sps, params.modulation, paths["bits_iq_transition_png"])
+        plot_bits_and_iq(bits, iq, params.sps, params.modulation, paths["bits_iq_transition_png"], m_order=params.m_order)
     except Exception:
         pass
     try:
@@ -528,6 +621,19 @@ def run_lab2(params: Lab2Params, bits: np.ndarray | None = None) -> Dict[str, st
         plot_two_symbol_rrc_contributions(syms, params.sps, taps, paths["rrc_two_symbols_png"])
     except Exception:
         pass
+    try:
+        deltas = list(params.isi_sps_deltas) if params.isi_sps_deltas is not None else []
+        sps_set = {int(params.sps)}
+        for d in deltas:
+            d_int = int(d)
+            if d_int > 0:
+                sps_set.add(int(params.sps) + d_int)
+        # Agregar algunos SPS de referencia para que cada curva tenga forma.
+        sps_set.update({2, 3, 4, 5, 6, 8, 10, 12, 16})
+        sps_values = sorted(sps_set)
+        plot_isi_vs_sps(params.rolloff, params.span, sps_values, paths["isi_vs_sps_png"])
+    except Exception:
+        pass
     return paths
 
 
@@ -536,7 +642,8 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser("Modulación – Modulación digital + RRC")
     ap.add_argument("--out", required=True)
     ap.add_argument("--n_bits", type=int, default=2000)
-    ap.add_argument("--mod", choices=["BPSK", "QPSK"], default="QPSK")
+    ap.add_argument("--mod", choices=["BPSK", "QPSK", "MPSK"], default="QPSK")
+    ap.add_argument("--M", type=int, default=4)
     ap.add_argument("--sps", type=int, default=8)
     ap.add_argument("--alpha", type=float, default=0.25)
     ap.add_argument("--span", type=int, default=8)
@@ -546,6 +653,7 @@ if __name__ == "__main__":
         out_dir=args.out,
         n_bits=args.n_bits,
         modulation=args.mod,
+        m_order=args.M,
         sps=args.sps,
         rolloff=args.alpha,
         span=args.span,

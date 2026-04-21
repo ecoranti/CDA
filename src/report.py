@@ -123,12 +123,15 @@ def write_markdown(out_dir: str):
     # SQNR/MSE si existen
     sqnr_png = os.path.join(out_dir, "sqnr_comparacion.png")
     mse_png = os.path.join(out_dir, "mse_comparacion.png")
-    if os.path.exists(sqnr_png) or os.path.exists(mse_png):
+    ecm_png = os.path.join(out_dir, "ecm_evolucion.png")
+    if os.path.exists(sqnr_png) or os.path.exists(mse_png) or os.path.exists(ecm_png):
         parts.append(f"\n## 7) Métricas adicionales de cuantización [{quantizer_label}]")
         if source == "audio" and os.path.exists(sqnr_png):
             parts.append("![SQNR](sqnr_comparacion.png)")
         if source == "audio" and os.path.exists(mse_png):
             parts.append("![MSE](mse_comparacion.png)")
+        if source == "audio" and os.path.exists(ecm_png):
+            parts.append("![ECM](ecm_evolucion.png)")
 
     parts.append("\n## 8) Métricas (tabla)")
     if metrics_md:
@@ -237,6 +240,7 @@ def write_pdf(out_dir: str):
         add_img(os.path.join(figdir, "A_quantization_error_compare.png"), "Comparación del error de cuantización")
         add_img(os.path.join(out_dir, "sqnr_comparacion.png"), "Comparación de SQNR (dB)")
         add_img(os.path.join(out_dir, "mse_comparacion.png"), "Comparación de MSE")
+        add_img(os.path.join(out_dir, "ecm_evolucion.png"), "Evolución del ECM acumulado")
     else:
         add_img(os.path.join(figdir, "B_bits_hist_before.png"), "Histogramas de bits – Texto (antes)")
         add_img(os.path.join(figdir, "B_bits_hist_scrambled.png"), "Histogramas de bits – Texto (scrambling)")

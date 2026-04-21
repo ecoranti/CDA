@@ -1,6 +1,16 @@
 {% extends 'base.html' %}
 {% block content %}
-  <h2>Resultados Formateo</h2>
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+    <h2 style="margin:0;">Resultados Formateo</h2>
+    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+      <button class="btn" type="button" onclick="openResultsFolder('{{ out }}')">Abrir carpeta de resultados</button>
+      <button class="btn secondary" type="button" onclick="downloadZip('{{ out }}')">Descargar ZIP completo</button>
+      <a class="btn" href="{{ url_for('download', out=out, file='informe_lab1.pdf') }}">Descargar informe (PDF)</a>
+      <a class="btn secondary" href="{{ url_for('download', out=out, file='informe_lab1.md') }}">Descargar informe (MD)</a>
+      <a class="btn secondary" href="{{ url_for('lab1_page') }}">Nueva Simulación</a>
+      <a class="btn secondary" href="{{ url_for('index') }}">Ir al Inicio</a>
+    </div>
+  </div>
   <p class="muted">Directorio de salida: <code>{{ out }}</code></p>
   {% if summary %}
     <div style="margin: 10px 0 18px; padding: 12px 14px; border: 1px solid #dbe3f0; border-radius: 10px; background: #f8fbff;">
@@ -10,28 +20,118 @@
         {% if summary.source == 'audio' %}
           | Cuantizador: <code>{{ 'A-law' if summary.quantizer == 'alaw' else 'Uniforme' }}</code>
           | fs: <code>{{ summary.fs }} Hz</code>
+          | W: <code>{{ summary.bw_hz }} Hz</code>
           | n: <code>{{ summary.n_bits }} bits</code>
           | Audio: <code>{{ summary.audio }}</code>
         {% else %}
+          | W: <code>{{ summary.bw_hz }} Hz</code>
           | Texto: <code>{{ summary.text }}</code>
         {% endif %}
         | LFSR: <code>seed={{ summary.lfsr_seed }}, taps={{ summary.lfsr_taps }}, bitwidth={{ summary.lfsr_bitwidth }}</code>
       </div>
     </div>
   {% endif %}
-  <p>
-    <button class="btn" type="button" onclick="openResultsFolder('{{ out }}')">Abrir carpeta de resultados</button>
-    <button class="btn secondary" type="button" onclick="downloadZip('{{ out }}')">Descargar ZIP completo</button>
-    <a class="btn" href="{{ url_for('download', out=out, file='informe_lab1.pdf') }}">Descargar informe (PDF)</a>
-    <a class="btn secondary" href="{{ url_for('download', out=out, file='informe_lab1.md') }}">Descargar informe (MD)</a>
-    <a class="btn secondary" href="{{ url_for('index') }}">Ir al Inicio</a>
-  </p>
   {% if figs %}
     <h3>Figuras</h3>
     <div class="figs">
       {% for f in figs %}
         <div>
-          <img src="{{ url_for('api_files') }}?path={{ out }}/figures/{{ f }}" alt="{{ f }}">
+          <img
+            src="{{ url_for('api_files') }}?path={{ out }}/figures/{{ f }}"
+            alt="{{ f }}"
+            {% if f == 'A_quantizer_low_level_compare.png' and low_level_csv %}data-no-viewer="1"{% endif %}
+          >
+          <div class="muted">{{ f }}</div>
+          {% if f == 'A_quantizer_low_level_compare.png' and low_level_csv %}
+            <button class="btn secondary" type="button" style="margin-top:8px;"
+                    onclick="document.getElementById('lowLevelInteractive')?.scrollIntoView({behavior:'smooth', block:'center'});">
+              Abrir interactivo
+            </button>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+  {% if low_level_csv %}
+    <h3>Vista interactiva (tramo de baja amplitud)</h3>
+    <div class="card" style="padding:12px;">
+      <div class="muted" style="margin-bottom:8px;">
+        Arrastrá para panear, rueda/trackpad para zoom y doble clic para reset.
+      </div>
+      <div id="lowLevelInteractive" style="width:100%; height:460px;"></div>
+    </div>
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <script>
+      (async function(){
+        const holder = document.getElementById('lowLevelInteractive');
+        if (!holder || typeof Plotly === 'undefined') return;
+        try {
+          const p = {{ low_level_csv|tojson }};
+          const url = "{{ url_for('api_files') }}?path=" + encodeURIComponent(p);
+          const res = await fetch(url);
+          if (!res.ok) throw new Error('No se pudo cargar CSV interactivo');
+          const txt = await res.text();
+          const lines = txt.trim().split(/\r?\n/);
+          if (lines.length < 2) throw new Error('CSV sin datos');
+          const t = [], yo = [], yu = [], ya = [];
+          for (let i = 1; i < lines.length; i++) {
+            const c = lines[i].split(',');
+            if (c.length < 4) continue;
+            t.push(Number(c[0]));
+            yo.push(Number(c[1]));
+            yu.push(Number(c[2]));
+            ya.push(Number(c[3]));
+          }
+          const traces = [
+            {
+              x: t,
+              y: yo,
+              mode: 'lines',
+              name: '[1] Original',
+              line: { width: 2.2, color: '#1f77b4', dash: 'solid' }
+            },
+            {
+              x: t,
+              y: yu,
+              mode: 'lines',
+              name: '[2] Uniforme',
+              line: { width: 1.8, color: '#ff7f0e', shape: 'hv', dash: 'dot' }
+            },
+            {
+              x: t,
+              y: ya,
+              mode: 'lines',
+              name: '[3] A-law',
+              line: { width: 1.8, color: '#2ca02c', dash: 'dash' }
+            },
+          ];
+          const layout = {
+            title: { text: 'Fuente A: comparación interactiva (baja amplitud)' },
+            xaxis: { title: 'Tiempo [s]', zeroline: false },
+            yaxis: { title: 'Amplitud', zeroline: true },
+            legend: { orientation: 'h', y: -0.2, title: { text: 'Curvas (ID numérico)' } },
+            margin: { l: 70, r: 25, t: 50, b: 70 },
+            dragmode: 'pan',
+          };
+          const config = {
+            responsive: true,
+            displaylogo: false,
+            scrollZoom: true,
+            modeBarButtonsToRemove: ['select2d', 'lasso2d', 'autoScale2d']
+          };
+          Plotly.newPlot(holder, traces, layout, config);
+        } catch (e) {
+          holder.innerHTML = '<div class="flash warning">No se pudo cargar la vista interactiva.</div>';
+        }
+      })();
+    </script>
+  {% endif %}
+  {% if root_figs %}
+    <h3>Figuras adicionales</h3>
+    <div class="figs">
+      {% for f in root_figs %}
+        <div>
+          <img src="{{ url_for('api_files') }}?path={{ out }}/{{ f }}" alt="{{ f }}">
           <div class="muted">{{ f }}</div>
         </div>
       {% endfor %}
@@ -49,7 +149,6 @@
     <h3>Logs</h3>
     <pre style="white-space: pre-wrap; background:#f8fafc; padding:10px; border:1px solid #e2e8f0; border-radius:8px;">{{ log_text }}</pre>
   {% endif %}
-  <p><a class="btn secondary" href="{{ url_for('lab1_page') }}">Nueva corrida</a></p>
 
   <script>
     async function openResultsFolder(path){

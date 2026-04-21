@@ -39,7 +39,7 @@
     <h3>Generador de Curvas BER</h3>
     <div class="hint" style="margin-bottom: 14px; padding: 12px 14px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; line-height:1.5;">
       <div style="font-weight:700; color:#0f172a; margin-bottom:6px;">Qué hace este bloque</div>
-      <div class="muted" style="margin-bottom:10px;">Ejecuta la etapa completa <strong>Modulación → Canal AWGN → Rx</strong> usando la salida real de Modulación y calcula la <strong>BER</strong>.</div>
+      <div class="muted" style="margin-bottom:10px;">Ejecuta la etapa completa <strong>Modulación → Canal AWGN → Rx</strong> usando la salida real de Modulación (BPSK, QPSK o M-PSK) y calcula la <strong>BER</strong>.</div>
       <div class="muted">Si querés una <strong>curva BER</strong>, definí un rango de <code>Eb/N0</code>. Si querés un <strong>punto único</strong>, poné <code>Eb/N0 mínimo = Eb/N0 máximo</code>.</div>
     </div>
 
@@ -73,6 +73,18 @@
           </select>
         </div>
         <div class="field">
+          <label style="display:flex; align-items:center; gap:8px;">
+            <input type="checkbox" name="use_rx_rrc" checked>
+            Usar RRC en recepción (filtro acoplado)
+          </label>
+          <small class="muted">Si lo desactivás, el receptor muestrea directamente la salida del canal sin filtro acoplado.</small>
+        </div>
+        <div class="field">
+          <label>Offset temporal de muestreo Rx (fracción de Ts)</label>
+          <input name="timing_offset_ts" type="number" step="0.01" min="-0.5" max="0.5" value="0.00">
+          <small class="muted">Desfase de los instantes de muestreo respecto del óptimo. Ejemplo: 0.05 desplaza 5% de Ts.</small>
+        </div>
+        <div class="field">
           <label>Eb/N0 mínimo (inicio de barrido)</label>
           <input name="eb_start" type="number" value="0">
         </div>
@@ -88,6 +100,11 @@
           <label>Muestras Monte Carlo por Eb/N0</label>
           <input id="ber_trials" name="trials_per_ebn0" type="number" min="1" value="20">
           <small class="muted">Recomendado: 20 a 50. Más realizaciones dan una estimación BER más estable, pero tardan más.</small>
+        </div>
+        <div class="field">
+          <label>Puntos de la curva teórica</label>
+          <input name="theory_points" type="number" min="2" value="300">
+          <small class="muted">Cantidad de puntos usados para dibujar la teoría. La curva simulada sigue usando solo los puntos reales del barrido.</small>
         </div>
       </div>
       <input type="hidden" name="out" value="{{ defaults.out_lab3 }}">
