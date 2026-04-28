@@ -148,11 +148,7 @@
 
     <div class="field">
       <label>Bits de cuantización (n) — L = 2ⁿ niveles</label>
-      <select id="l1_nbits">
-        <option value="8" selected>8 bits → 256 niveles</option>
-        <option value="10">10 bits → 1024 niveles</option>
-        <option value="12">12 bits → 4096 niveles</option>
-      </select>
+      <input id="l1_nbits" type="number" min="1" max="24" step="1" value="8">
     </div>
 
     <div class="field">
@@ -373,7 +369,7 @@
   }
 
   function buildLab2ResultsHtml(paths) {
-    const imgs = ['iq_time_png', 'constellation_symbols_png', 'constellation_shaped_png', 'spectrum_png', 'rrc_impulse_png', 'eye_png', 'bits_iq_transition_png', 'isi_vs_sps_png'];
+    const imgs = ['iq_time_png', 'constellation_symbols_png', 'constellation_shaped_png', 'spectrum_png', 'spectrum_compare_png', 'isi_rrc_compare_png', 'isi_rrc_error_png', 'rrc_impulse_png', 'eye_png', 'bits_iq_transition_png', 'isi_vs_sps_png'];
     const bust = Date.now();
     let html = '<div class="figs">';
     for (const k of imgs) {
@@ -402,10 +398,14 @@
   function buildLab2AuditHtml(audit) {
     if (!audit) return '';
     const b = audit.bits || {};
+    const p = audit.params || {};
     const audio = audit.audio || null;
     const text = audit.text || null;
     let ah = '<ul>';
-    ah += `<li>Bits: count=${b.count} p0=${(b.p0 || 0).toFixed(3)} p1=${(b.p1 || 0).toFixed(3)} H=${(b.H || 0).toFixed(3)}</li>`;
+    ah += `<li>Parámetros usados: source=<b>${p.source || b.source || '-'}</b>, quantizer=<b>${p.quantizer || '-'}</b>, fs=${p.fs ?? '-'}, n_bits=${p.n_bits ?? '-'}, método=${p.method || b.method || '-'}</li>`;
+    ah += `<li>Bits: count=${b.count ?? '-'} (0s=${b.zeros ?? '-'}, 1s=${b.ones ?? '-'}) p0=${(b.p0 || 0).toFixed(3)} p1=${(b.p1 || 0).toFixed(3)} H=${(b.H || 0).toFixed(3)}</li>`;
+    if (b.md5) ah += `<li>Huella bitstream (MD5): <code>${b.md5}</code></li>`;
+    if (b.head_bits) ah += `<li>Primeros ${b.head_n || b.head_bits.length} bits: <code style="word-break: break-all;">${b.head_bits}</code></li>`;
     if (audio) ah += `<li>Audio: ${audio.path} — muestras=${audio.samples} dur=${(audio.duration_s || 0).toFixed(2)}s fs=${audio.fs_target}</li>`;
     if (text) ah += `<li>Texto: ${text.path} — bytes=${text.bytes} preview="${(text.preview || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}"</li>`;
     ah += '</ul>';

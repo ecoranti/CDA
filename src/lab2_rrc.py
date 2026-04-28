@@ -224,22 +224,297 @@ def plot_shaped_constellation(iq: np.ndarray, sps: int, out_path: str, npoints: 
     plt.close()
 
 
-def plot_spectrum(iq: np.ndarray, sps: int, out_path: str) -> None:
+def plot_spectrum(iq: np.ndarray, sps: int, out_path: str, alpha: float | None = None) -> None:
     fs = float(sps)
     f, Pxx = welch(iq, fs=fs, nperseg=2048, return_onesided=False, scaling="density")
     Pxx = np.fft.fftshift(Pxx)
     f = np.fft.fftshift(f)
+    # Normalizar a 0 dB para resaltar diferencias de forma espectral entre distintos alpha.
     PdB = 10 * np.log10(np.maximum(Pxx, 1e-18))
+    PdB = PdB - np.max(PdB)
     plt.figure()
     plt.plot(f, PdB)
     plt.axvline(0, color='gray', lw=0.6)
+    if alpha is not None:
+        edge = 0.5 * (1.0 + float(alpha))
+        plt.axvline(+edge, color="#64748b", lw=0.9, ls="--", label=f"±(1+r)/2 = ±{edge:.3f}")
+        plt.axvline(-edge, color="#64748b", lw=0.9, ls="--")
+        plt.legend(loc="best", fontsize=8)
+    x_half = min(max(1.2, 0.7 * (1.0 + float(alpha if alpha is not None else 0.25))), fs / 2.0)
+    plt.xlim(-x_half, x_half)
+    plt.ylim(-100, 3)
     plt.grid(True, which='both', alpha=0.25)
     plt.xlabel("Frecuencia [ciclos/símbolo]")
-    plt.ylabel("Densidad espectral [dB/Hz]")
-    plt.title("Espectro (Welch)")
+    plt.ylabel("PSD normalizada [dBr]")
+    if alpha is None:
+        plt.title("Espectro (Welch)")
+    else:
+        plt.title(f"Espectro (Welch, r={alpha:.2f})")
     plt.tight_layout()
     plt.savefig(out_path, dpi=140)
     plt.close()
+
+
+def plot_spectrum_compare(
+    symbols: np.ndarray,
+    sps: int,
+    span: int,
+    out_path: str,
+    alphas: tuple[float, ...] = (0.20, 0.25, 0.35),
+) -> None:
+    """Superpone espectros normalizados para varios roll-off usando la misma secuencia simbolica."""
+    alphas_use = []
+    for a in alphas:
+        try:
+            av = float(a)
+        except Exception:
+            continue
+        if 0.0 <= av <= 1.0 and av not in alphas_use:
+            alphas_use.append(av)
+    if not alphas_use:
+        return
+
+    fs = float(sps)
+    x_half = 1.2
+    plt.figure(figsize=(7.2, 4.8))
+    for alpha in alphas_use:
+        taps = rrc_taps(alpha, sps, span)
+        iq = upsample_and_filter(symbols, sps, taps)
+        f, Pxx = welch(iq, fs=fs, nperseg=2048, return_onesided=False, scaling="density")
+        Pxx = np.fft.fftshift(Pxx)
+        f = np.fft.fftshift(f)
+        PdB = 10 * np.log10(np.maximum(Pxx, 1e-18))
+        PdB = PdB - np.max(PdB)
+        plt.plot(f, PdB, linewidth=1.5, label=f"r={alpha:.2f}")
+        edge = 0.5 * (1.0 + alpha)
+        plt.axvline(+edge, color="#94a3b8", lw=0.7, ls="--", alpha=0.7)
+        plt.axvline(-edge, color="#94a3b8", lw=0.7, ls="--", alpha=0.7)
+        x_half = max(x_half, 0.7 * (1.0 + alpha))
+
+    plt.axvline(0, color="gray", lw=0.6)
+    plt.xlim(-min(x_half, fs / 2.0), min(x_half, fs / 2.0))
+    plt.ylim(-100, 3)
+    plt.grid(True, which="both", alpha=0.25)
+    plt.xlabel("Frecuencia [ciclos/simbolo]")
+    plt.ylabel("PSD normalizada [dBr]")
+    plt.title(f"Comparacion de espectro vs roll-off (sps={sps}, span={span})")
+    plt.legend(loc="best", fontsize=8)
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=140)
+    plt.close()
+
+
+def plot_isi_rrc_compare(
+    sps: int,
+    out_path: str,
+    alphas: tuple[float, ...] = (0.20, 0.25, 0.35),
+    spans: tuple[int, ...] = (4, 8, 16),
+) -> None:
+    """Figura comparativa del pulso equivalente g(t)=h_rrc*h_rrc y muestras g(kTs)."""
+    if sps <= 0:
+        return
+    alphas_use = [float(a) for a in alphas if 0.0 <= float(a) <= 1.0]
+    spans_use = [int(sp) for sp in spans if int(sp) >= 2]
+    if not alphas_use or not spans_use:
+        return
+
+    fig, axs = plt.subplots(len(alphas_use), 1, figsize=(11.8, 6.6), sharex=True)
+    if len(alphas_use) == 1:
+        axs = [axs]
+    fig.suptitle("Efecto de r y span en el ISI residual (RRC truncado)", fontsize=15, fontweight="bold")
+    colors = ["C0", "C1", "C2", "C3", "C4"]
+    linestyles = ["-", "--", "-.", ":"]
+    xlim_sym = 8
+    k_marks = np.arange(-xlim_sym + 1, xlim_sym, dtype=int)
+
+    for i, alpha in enumerate(alphas_use):
+        ax = axs[i]
+        side_samples = []
+        curve_cache = []
+        for j, span in enumerate(spans_use):
+            taps = rrc_taps(alpha, sps, span).astype(np.float64)
+            g = np.convolve(taps, taps, mode="full")
+            c = (g.size - 1) // 2
+            n = np.arange(g.size) - c
+            t = n / float(sps)
+            m = np.abs(t) <= xlim_sym
+            cplot = colors[j % len(colors)]
+            ls = linestyles[j % len(linestyles)]
+            ax.plot(
+                t[m],
+                g[m],
+                lw=1.6,
+                ls=ls,
+                color=cplot,
+                alpha=0.95,
+                label=f"span = {span}",
+                zorder=2 + j,
+            )
+            curve_cache.append((t[m], g[m], cplot, ls, span))
+
+            ys = []
+            for k in k_marks:
+                idx = c + k * sps
+                if 0 <= idx < g.size:
+                    ys.append((k, float(g[idx])))
+            if ys:
+                xs = [v[0] for v in ys]
+                yv = [v[1] for v in ys]
+                ax.plot(xs, yv, "o", ms=3.8, color="black", markerfacecolor="white", markeredgewidth=0.8)
+                side = [(k, y) for (k, y) in ys if k != 0]
+                if side:
+                    kmax, ymax = max(side, key=lambda p: abs(p[1]))
+                    side_samples.append((span, j, kmax, ymax))
+
+        if side_samples:
+            # Marcar los 3 maximos (uno por span) para que la comparacion quede explicita.
+            for span_v, jv, kmax, ymax in side_samples:
+                cmark = colors[jv % len(colors)]
+                ax.plot([kmax], [ymax], "o", ms=5.8, markerfacecolor=cmark, markeredgecolor="red", markeredgewidth=1.0)
+                ax.annotate(
+                    f"|g({kmax}Ts)| max s={span_v}",
+                    xy=(kmax, ymax),
+                    xytext=(kmax, ymax - (0.30 + 0.16 * jv) if ymax >= 0 else ymax - (0.20 + 0.12 * jv)),
+                    textcoords="data",
+                    color="red",
+                    fontsize=8.5,
+                    ha="center",
+                    arrowprops=dict(arrowstyle="->", lw=0.75, color="red"),
+                )
+
+        ax.plot([0], [1.0], "o", ms=5.2, color="black")
+        ax.annotate("k = 0\ng(0) ~ 1", xy=(0.35, 0.93), fontsize=9)
+        ax.axhline(0, color="gray", lw=0.7)
+        for kv in range(-xlim_sym, xlim_sym + 1):
+            ax.axvline(kv, color="#9ca3af", lw=0.5, ls=":", alpha=0.45)
+        ax.set_xlim(-xlim_sym, xlim_sym)
+        ax.set_ylim(-1.0, 1.5)
+        ax.set_ylabel("Amplitud")
+        ax.grid(True, alpha=0.22)
+
+        if alpha <= 0.21:
+            txt = "colas mas largas -> requiere mayor span"
+            box_c = "#dbeafe"
+        elif alpha <= 0.30:
+            txt = "compromiso intermedio"
+            box_c = "#fef3c7"
+        else:
+            txt = "colas mas cortas -> tolera menor span"
+            box_c = "#dcfce7"
+        ax.text(
+            -7.55,
+            0.82,
+            f"r = {alpha:.2f}",
+            fontsize=13,
+            fontweight="bold",
+            bbox=dict(boxstyle="round,pad=0.35", facecolor="white", edgecolor="black", alpha=0.92),
+        )
+        ax.text(
+            -7.55,
+            -0.55,
+            txt,
+            fontsize=10.5,
+            style="italic",
+            bbox=dict(boxstyle="round,pad=0.5", facecolor=box_c, edgecolor="#94a3b8", alpha=0.95),
+        )
+        ax.legend(loc="upper right", fontsize=9, framealpha=0.92)
+        ax.set_xlabel("Tiempo [simbolos]")
+
+        # Zoom lateral: hace visible la diferencia entre curvas cuando se superponen casi por completo.
+        axz = ax.inset_axes([0.60, 0.08, 0.34, 0.30])
+        for tz, gz, cz, lsz, _sp in curve_cache:
+            axz.plot(tz, gz, lw=1.3, ls=lsz, color=cz, alpha=0.95)
+        axz.set_xlim(-4.6, -1.4)
+        axz.set_ylim(-0.10, 0.10)
+        axz.grid(True, alpha=0.20)
+        axz.set_xticks([-4, -3, -2])
+        axz.set_yticks([-0.08, 0.00, 0.08])
+        axz.tick_params(labelsize=7)
+        axz.set_title("Zoom lóbulos", fontsize=7.5)
+
+    fig.text(
+        0.5,
+        0.02,
+        "Nota: Menor truncamiento temporal (span mayor) preserva mejor Nyquist y reduce ISI residual.",
+        ha="center",
+        fontsize=11.5,
+        bbox=dict(boxstyle="round,pad=0.45,rounding_size=0.15", facecolor="#f8fafc", edgecolor="#525252", alpha=0.96),
+    )
+    fig.tight_layout(rect=[0.02, 0.05, 1, 0.96])
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)
+
+
+def plot_isi_rrc_error_vs_ref(
+    sps: int,
+    out_path: str,
+    alphas: tuple[float, ...] = (0.20, 0.25, 0.35),
+    spans: tuple[int, ...] = (4, 8, 16),
+    span_ref: int = 16,
+) -> None:
+    """Grafica error en dB del pulso equivalente respecto a un span de referencia."""
+    if sps <= 0:
+        return
+    alphas_use = [float(a) for a in alphas if 0.0 <= float(a) <= 1.0]
+    spans_use = [int(sp) for sp in spans if int(sp) >= 2]
+    if not alphas_use or span_ref not in spans_use:
+        return
+
+    fig, axs = plt.subplots(len(alphas_use), 1, figsize=(10.8, 6.2), sharex=True)
+    if len(alphas_use) == 1:
+        axs = [axs]
+    fig.suptitle(f"Error de g(t) respecto a span={span_ref} (RRC truncado)", fontsize=14, fontweight="bold")
+    xlim_sym = 8
+    eps = 1e-15
+    colors = ["C0", "C1", "C2", "C3"]
+    linestyles = ["-", "--", "-.", ":"]
+
+    for i, alpha in enumerate(alphas_use):
+        ax = axs[i]
+        curves = {}
+        tref = np.arange(-xlim_sym, xlim_sym + 1.0 / sps, 1.0 / sps)
+        for sp in spans_use:
+            h = rrc_taps(alpha, sps, sp).astype(np.float64)
+            g = np.convolve(h, h, mode="full")
+            c = (g.size - 1) // 2
+            n = np.arange(g.size) - c
+            t = n / float(sps)
+            m = np.abs(t) <= xlim_sym
+            curves[sp] = np.interp(tref, t[m], g[m])
+
+        gref = curves[span_ref]
+        for j, sp in enumerate(spans_use):
+            if sp == span_ref:
+                continue
+            err = curves[sp] - gref
+            err_db = 20.0 * np.log10(np.maximum(np.abs(err), eps))
+            ax.plot(
+                tref,
+                err_db,
+                color=colors[j % len(colors)],
+                ls=linestyles[j % len(linestyles)],
+                lw=1.4,
+                label=f"span={sp} vs ref={span_ref}",
+            )
+
+        ax.axhline(-60.0, color="#64748b", lw=0.8, ls="--")
+        ax.grid(True, alpha=0.25)
+        ax.set_ylim(-180, -20)
+        ax.set_ylabel("Error [dB]")
+        ax.text(
+            -7.7,
+            -30,
+            f"r = {alpha:.2f}",
+            fontsize=12,
+            fontweight="bold",
+            bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor="black", alpha=0.92),
+        )
+        ax.legend(loc="lower right", fontsize=8)
+        ax.set_xlabel("Tiempo [simbolos]")
+
+    fig.tight_layout(rect=[0.02, 0.02, 1, 0.96])
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)
 
 
 def plot_eye(iq: np.ndarray, sps: int, out_path: str, span_symbols: int = 2, max_traces: int = 300) -> None:
@@ -271,6 +546,10 @@ def plot_eye(iq: np.ndarray, sps: int, out_path: str, span_symbols: int = 2, max
         plt.axvline(k, color='gray', lw=0.5, alpha=0.5)
     plt.axhline(0, color='gray', lw=0.6)
     plt.grid(True, alpha=0.25)
+    plt.xlim(0.0, float(span_symbols))
+    plt.ylim(-1.0, 1.0)
+    if span_symbols >= 2:
+        plt.axvline(span_symbols / 2.0, color='#dc2626', lw=1.2, ls='--', alpha=0.9)
     plt.title('Eye (I)')
     plt.xlabel('Tiempo [símbolos]')
     plt.ylabel('Amplitud')
@@ -281,6 +560,10 @@ def plot_eye(iq: np.ndarray, sps: int, out_path: str, span_symbols: int = 2, max
         plt.axvline(k, color='gray', lw=0.5, alpha=0.5)
     plt.axhline(0, color='gray', lw=0.6)
     plt.grid(True, alpha=0.25)
+    plt.xlim(0.0, float(span_symbols))
+    plt.ylim(-1.0, 1.0)
+    if span_symbols >= 2:
+        plt.axvline(span_symbols / 2.0, color='#dc2626', lw=1.2, ls='--', alpha=0.9)
     plt.title('Eye (Q)')
     plt.xlabel('Tiempo [símbolos]')
     plt.tight_layout()
@@ -583,6 +866,9 @@ def run_lab2(params: Lab2Params, bits: np.ndarray | None = None) -> Dict[str, st
         "constellation_symbols_png": os.path.join(params.out_dir, "constellation_symbols.png"),
         "constellation_shaped_png": os.path.join(params.out_dir, "constellation_shaped.png"),
         "spectrum_png": os.path.join(params.out_dir, "spectrum.png"),
+        "spectrum_compare_png": os.path.join(params.out_dir, "spectrum_compare.png"),
+        "isi_rrc_compare_png": os.path.join(params.out_dir, "isi_rrc_compare.png"),
+        "isi_rrc_error_png": os.path.join(params.out_dir, "isi_rrc_error.png"),
         "eye_png": os.path.join(params.out_dir, "eye_diagram.png"),
         "bits_iq_transition_png": os.path.join(params.out_dir, "bits_iq_transition.png"),
         "rrc_discrete_upsampling_png": os.path.join(params.out_dir, "rrc_discrete_upsampling.png"),
@@ -605,7 +891,19 @@ def run_lab2(params: Lab2Params, bits: np.ndarray | None = None) -> Dict[str, st
     plot_time_iq(iq, params.sps, paths["iq_time_png"])
     plot_symbol_constellation(syms, paths["constellation_symbols_png"])
     plot_shaped_constellation(iq, params.sps, paths["constellation_shaped_png"])
-    plot_spectrum(iq, params.sps, paths["spectrum_png"])
+    plot_spectrum(iq, params.sps, paths["spectrum_png"], alpha=params.rolloff)
+    try:
+        plot_spectrum_compare(syms, params.sps, params.span, paths["spectrum_compare_png"])
+    except Exception:
+        pass
+    try:
+        plot_isi_rrc_compare(params.sps, paths["isi_rrc_compare_png"])
+    except Exception:
+        pass
+    try:
+        plot_isi_rrc_error_vs_ref(params.sps, paths["isi_rrc_error_png"])
+    except Exception:
+        pass
     eye_span = max(1, int(params.eye_span))
     eye_tr = max(10, int(params.eye_traces))
     plot_eye(iq, params.sps, paths["eye_png"], span_symbols=eye_span, max_traces=eye_tr)

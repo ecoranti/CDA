@@ -122,6 +122,74 @@
       </div>
     </form>
   </div>
+
+  <div class="card" style="margin-top:14px;">
+    <h3>Curvas BER Teóricas (múltiples modulaciones)</h3>
+    <div class="muted" style="margin-bottom:10px;">
+      Seleccioná 2, 3 o 4 esquemas y se genera un único gráfico BER teórico vs Eb/N0 en AWGN.
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>Modulaciones</label>
+        <div style="display:flex; gap:14px; flex-wrap:wrap; margin-top:6px;">
+          <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" class="theory-mod" value="BPSK"> BPSK</label>
+          <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" class="theory-mod" value="QPSK" checked> QPSK</label>
+          <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" class="theory-mod" value="8PSK" checked> 8-PSK</label>
+          <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" class="theory-mod" value="16PSK" checked> 16-PSK</label>
+        </div>
+      </div>
+      <div class="field">
+        <label>Eb/N0 mínimo [dB]</label>
+        <input id="theory_eb_start" type="number" value="0" step="0.5">
+      </div>
+      <div class="field">
+        <label>Eb/N0 máximo [dB]</label>
+        <input id="theory_eb_end" type="number" value="12" step="0.5">
+      </div>
+      <div class="field">
+        <label>Paso Δ Eb/N0 [dB]</label>
+        <input id="theory_eb_step" type="number" value="1" step="0.1" min="0.1">
+      </div>
+    </div>
+    <div style="margin-top:12px;">
+      <button type="button" class="btn secondary" onclick="generateTheoryMulti()">Generar Curvas Teóricas</button>
+      <span id="theory_multi_status" class="muted" style="margin-left:8px;"></span>
+    </div>
+    <div id="theory_multi_wrap" style="margin-top:14px; display:none;">
+      <img id="theory_multi_img" src="" alt="ber_theory_multi.png" style="max-width:100%; height:auto; border:1px solid #e2e8f0; border-radius:8px;">
+      <div class="muted" id="theory_multi_meta" style="margin-top:8px;"></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:14px;">
+    <h3>Plano Eficiencia–Ancho de Banda</h3>
+    <div class="muted" style="margin-bottom:10px;">
+      Genera el plano <code>η vs Eb/N0</code> con límite de Shannon y puntos ideales para las modulaciones seleccionadas y distintos valores de roll-off.
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>Modulaciones</label>
+        <div style="display:flex; gap:14px; flex-wrap:wrap; margin-top:6px;">
+          <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" class="eff-mod" value="BPSK"> BPSK</label>
+          <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" class="eff-mod" value="QPSK" checked> QPSK</label>
+          <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" class="eff-mod" value="8PSK" checked> 8-PSK</label>
+          <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" class="eff-mod" value="16PSK"> 16-PSK</label>
+        </div>
+      </div>
+      <div class="field">
+        <label>Valores de roll-off r (separados por coma)</label>
+        <input id="eff_rolloffs" type="text" value="0.20, 0.25, 0.35">
+      </div>
+    </div>
+    <div style="margin-top:12px;">
+      <button type="button" class="btn secondary" onclick="generateEfficiencyPlane()">Generar Plano Eficiencia</button>
+      <span id="eff_status" class="muted" style="margin-left:8px;"></span>
+    </div>
+    <div id="eff_wrap" style="margin-top:14px; display:none;">
+      <img id="eff_img" src="" alt="efficiency_plane.png" style="max-width:100%; height:auto; border:1px solid #e2e8f0; border-radius:8px;">
+      <div class="muted" id="eff_meta" style="margin-top:8px;"></div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -326,6 +394,99 @@
       }
     } catch (e) {
       alert('No se pudo solicitar la cancelación.');
+    }
+  }
+
+  async function generateTheoryMulti(){
+    const status = document.getElementById('theory_multi_status');
+    const wrap = document.getElementById('theory_multi_wrap');
+    const img = document.getElementById('theory_multi_img');
+    const meta = document.getElementById('theory_multi_meta');
+    const selected = Array.from(document.querySelectorAll('.theory-mod:checked')).map(el => el.value);
+    const ebStart = parseFloat(document.getElementById('theory_eb_start').value || '0');
+    const ebEnd = parseFloat(document.getElementById('theory_eb_end').value || '12');
+    const ebStep = parseFloat(document.getElementById('theory_eb_step').value || '1');
+
+    if (selected.length < 1) {
+      alert('Seleccioná al menos una modulación.');
+      return;
+    }
+    if (!(ebStep > 0)) {
+      alert('El paso Δ Eb/N0 debe ser mayor a 0.');
+      return;
+    }
+    if (ebEnd < ebStart) {
+      alert('Eb/N0 máximo debe ser mayor o igual al mínimo.');
+      return;
+    }
+
+    if (status) status.textContent = 'Generando gráfico...';
+    try {
+      const r = await fetch('/api/lab3/theory_multi', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          out: '{{ defaults.out_lab3 }}',
+          eb_start: ebStart,
+          eb_end: ebEnd,
+          eb_step: ebStep,
+          modulations: selected,
+        }),
+      });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || 'No se pudo generar la figura');
+
+      const plotPath = j.plot_path;
+      const src = `/api/files?path=${encodeURIComponent(plotPath)}&v=${Date.now()}`;
+      if (img) img.src = src;
+      if (meta) meta.textContent = `Archivo: ${j.plot_name} | salida: ${j.out_dir}`;
+      if (wrap) wrap.style.display = 'block';
+      if (status) status.textContent = 'Listo.';
+    } catch (e) {
+      if (status) status.textContent = '';
+      alert(e.message || 'Error generando curvas teóricas.');
+    }
+  }
+
+  async function generateEfficiencyPlane(){
+    const status = document.getElementById('eff_status');
+    const wrap = document.getElementById('eff_wrap');
+    const img = document.getElementById('eff_img');
+    const meta = document.getElementById('eff_meta');
+    const selected = Array.from(document.querySelectorAll('.eff-mod:checked')).map(el => el.value);
+    const rolloffs = (document.getElementById('eff_rolloffs').value || '').trim();
+
+    if (selected.length < 1) {
+      alert('Seleccioná al menos una modulación.');
+      return;
+    }
+    if (!rolloffs) {
+      alert('Ingresá al menos un valor de roll-off.');
+      return;
+    }
+
+    if (status) status.textContent = 'Generando gráfico...';
+    try {
+      const r = await fetch('/api/lab3/efficiency_plane', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          out: '{{ defaults.out_lab3 }}',
+          modulations: selected,
+          rolloffs: rolloffs,
+        }),
+      });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || 'No se pudo generar la figura');
+
+      const src = `/api/files?path=${encodeURIComponent(j.plot_path)}&v=${Date.now()}`;
+      if (img) img.src = src;
+      if (meta) meta.textContent = `Archivo: ${j.plot_name} | salida: ${j.out_dir}`;
+      if (wrap) wrap.style.display = 'block';
+      if (status) status.textContent = 'Listo.';
+    } catch (e) {
+      if (status) status.textContent = '';
+      alert(e.message || 'Error generando plano de eficiencia.');
     }
   }
 </script>

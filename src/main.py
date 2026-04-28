@@ -96,6 +96,7 @@ def process_audio(
             x, xhat, fs,
             f"Fuente A ({q_name}): señal original vs reconstruida",
             os.path.join(figdir, f"A_signal_quantized_compare_{prefix}.png"),
+            data_csv=os.path.join(figdir, f"A_signal_quantized_compare_{prefix}_data.csv"),
         )
         save_quantizer_characteristic(
             x, xhat,

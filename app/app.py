@@ -7,6 +7,7 @@ import uuid
 import subprocess
 import tempfile
 import json
+import hashlib
 from pathlib import Path
 import sys
 from typing import Optional
@@ -576,6 +577,14 @@ def create_app() -> Flask:
         llp = Path(out_dir) / "figures" / "A_quantizer_low_level_compare_data.csv"
         if llp.exists():
             low_level_csv = str(llp)
+        signal_compare_csv_uniform = None
+        scup = Path(out_dir) / "figures" / "A_signal_quantized_compare_uniform_data.csv"
+        if scup.exists():
+            signal_compare_csv_uniform = str(scup)
+        signal_compare_csv_alaw = None
+        scalp = Path(out_dir) / "figures" / "A_signal_quantized_compare_alaw_data.csv"
+        if scalp.exists():
+            signal_compare_csv_alaw = str(scalp)
         return render_template(
             "lab1_results.html",
             out=out_dir,
@@ -585,6 +594,8 @@ def create_app() -> Flask:
             log_text=log_text,
             summary=summary,
             low_level_csv=low_level_csv,
+            signal_compare_csv_uniform=signal_compare_csv_uniform,
+            signal_compare_csv_alaw=signal_compare_csv_alaw,
         )
 
     # ---------- Lab 2 ----------
@@ -678,7 +689,31 @@ def create_app() -> Flask:
         for name in ["params.json", "run_log.txt"]:
             if (p / name).exists():
                 other.append(name)
-        return render_template("lab2_results.html", out=out_dir, figs=figs, bin_files=bin_files, other=other)
+        signal_compare_csv_uniform = None
+        signal_compare_csv_alaw = None
+        for cand in [
+            p / "figures" / "A_signal_quantized_compare_uniform_data.csv",
+            p / "formateo" / "figures" / "A_signal_quantized_compare_uniform_data.csv",
+        ]:
+            if cand.exists():
+                signal_compare_csv_uniform = str(cand)
+                break
+        for cand in [
+            p / "figures" / "A_signal_quantized_compare_alaw_data.csv",
+            p / "formateo" / "figures" / "A_signal_quantized_compare_alaw_data.csv",
+        ]:
+            if cand.exists():
+                signal_compare_csv_alaw = str(cand)
+                break
+        return render_template(
+            "lab2_results.html",
+            out=out_dir,
+            figs=figs,
+            bin_files=bin_files,
+            other=other,
+            signal_compare_csv_uniform=signal_compare_csv_uniform,
+            signal_compare_csv_alaw=signal_compare_csv_alaw,
+        )
 
     @app.post("/api/lab2/run_from_lab1")
     def api_lab2_run_from_lab1():
@@ -763,12 +798,29 @@ def create_app() -> Flask:
 
                 from src.bits_utils import bits_entropy_stats as _bes
                 p0, p1, H, var = _bes(bits_local)
+                bits_arr = _np.asarray(bits_local, dtype=_np.uint8).ravel()
+                bits_md5 = hashlib.md5(bits_arr.tobytes()).hexdigest()
+                head_n = min(64, int(bits_arr.size))
+                bits_head = "".join(str(int(v)) for v in bits_arr[:head_n].tolist())
+                n_ones = int(bits_arr.sum())
+                n_zeros = int(bits_arr.size - n_ones)
                 audit = {
-                    "bits": {"count": len(bits_local), "p0": float(p0), "p1": float(p1), "H": float(H), "var": float(var),
-                             "source": src, "method": method_use}
+                    "bits": {
+                        "count": len(bits_local),
+                        "p0": float(p0),
+                        "p1": float(p1),
+                        "H": float(H),
+                        "var": float(var),
+                        "zeros": n_zeros,
+                        "ones": n_ones,
+                        "md5": bits_md5,
+                        "head_n": head_n,
+                        "head_bits": bits_head,
+                        "source": src,
+                        "method": method_use,
+                    }
                 }
 
-                import hashlib
                 if src == "audio":
                     try:
                         h = hashlib.md5()
@@ -1247,6 +1299,256 @@ def create_app() -> Flask:
         t.start()
 
         return jsonify({"ok": True, "job_id": job_id, "out_dir": out_dir})
+
+    @app.post("/api/lab3/theory_multi")
+    def api_lab3_theory_multi():
+        data = request.get_json(force=True) or {}
+        base_out = data.get("out") or DEFAULTS["out_lab3"]
+        eb_start = float(data.get("eb_start") or 0.0)
+        eb_end = float(data.get("eb_end") or 12.0)
+        eb_step = float(data.get("eb_step") or 1.0)
+        if eb_step <= 0:
+            return jsonify({"ok": False, "error": "eb_step debe ser > 0"}), 400
+        if eb_end < eb_start:
+            return jsonify({"ok": False, "error": "eb_end debe ser >= eb_start"}), 400
+
+        selected = data.get("modulations") or []
+        if isinstance(selected, str):
+            selected = [selected]
+        selected_norm = [str(x).strip().upper() for x in selected if str(x).strip()]
+        if not selected_norm:
+            return jsonify({"ok": False, "error": "Selecciona al menos una modulación"}), 400
+
+        choices = []
+        for key in selected_norm:
+            if key == "BPSK":
+                choices.append(("BPSK", 2, "BPSK"))
+            elif key == "QPSK":
+                choices.append(("QPSK", 4, "QPSK"))
+            elif key == "8PSK":
+                choices.append(("MPSK", 8, "8-PSK"))
+            elif key == "16PSK":
+                choices.append(("MPSK", 16, "16-PSK"))
+            else:
+                return jsonify({"ok": False, "error": f"Modulación no soportada: {key}"}), 400
+
+        # Quitar duplicados respetando orden
+        unique = []
+        seen = set()
+        for item in choices:
+            if item[2] in seen:
+                continue
+            seen.add(item[2])
+            unique.append(item)
+
+        # En AWGN coherente la BER teórica de BPSK y QPSK coincide.
+        # Si ambas están seleccionadas, mostrar una única curva combinada.
+        labels_present = {lbl for _, _, lbl in unique}
+        if "BPSK" in labels_present and "QPSK" in labels_present:
+            merged = []
+            merged_added = False
+            for mod, m_order, lbl in unique:
+                if lbl in {"BPSK", "QPSK"}:
+                    if not merged_added:
+                        merged.append(("BPSK", 2, "BPSK/QPSK"))
+                        merged_added = True
+                else:
+                    merged.append((mod, m_order, lbl))
+            unique = merged
+
+        import numpy as _np
+        import matplotlib.pyplot as _plt
+
+        eb_arr = _np.arange(eb_start, eb_end + 1e-12, eb_step, dtype=_np.float64)
+        if eb_arr.size < 2:
+            eb_arr = _np.array([eb_start, eb_end], dtype=_np.float64)
+
+        out_dir = _ts_dir(Path(base_out))
+        fig_path = out_dir / "ber_theory_multi.png"
+        cfg_path = out_dir / "ber_theory_multi_params.json"
+
+        style_map = {
+            "BPSK": "#1d4ed8",
+            "QPSK": "#7c3aed",
+            "BPSK/QPSK": "#1d4ed8",
+            "8-PSK": "#16a34a",
+            "16-PSK": "#dc2626",
+        }
+
+        _plt.figure(figsize=(10, 6))
+        for mod, m_order, label in unique:
+            ber = lab3_demod.theoretical_ber_mpsk(eb_arr, modulation=mod, m_order=m_order)
+            color = style_map.get(label, "#0f172a")
+            _plt.semilogy(
+                eb_arr,
+                ber,
+                "-",
+                color=color,
+                lw=2.0,
+                marker="o",
+                markersize=3.8,
+                markerfacecolor=color,
+                markeredgewidth=0.0,
+                label=label,
+            )
+
+        _plt.grid(True, which="both", linestyle="--", alpha=0.35)
+        _plt.xlabel("Eb/N0 [dB]")
+        _plt.ylabel("BER")
+        _plt.title("Curvas BER teóricas (AWGN)")
+        _plt.ylim(1e-6, 1)
+        _plt.xlim(float(eb_arr.min()), float(eb_arr.max()))
+        _plt.legend()
+        _plt.tight_layout()
+        _plt.savefig(fig_path, dpi=160)
+        _plt.close()
+
+        _write_json(
+            cfg_path,
+            {
+                "eb_start": eb_start,
+                "eb_end": eb_end,
+                "eb_step": eb_step,
+                "modulations": [lbl for _, _, lbl in unique],
+                "points": int(eb_arr.size),
+            },
+        )
+
+        try:
+            fig_rel = str(fig_path.relative_to(ROOT))
+            out_rel = str(out_dir.relative_to(ROOT))
+        except Exception:
+            fig_rel = str(fig_path)
+            out_rel = str(out_dir)
+
+        return jsonify(
+            {
+                "ok": True,
+                "out_dir": out_rel,
+                "plot_path": fig_rel,
+                "plot_name": fig_path.name,
+            }
+        )
+
+    @app.post("/api/lab3/efficiency_plane")
+    def api_lab3_efficiency_plane():
+        data = request.get_json(force=True) or {}
+        base_out = data.get("out") or DEFAULTS["out_lab3"]
+        selected = data.get("modulations") or []
+        rolloffs_raw = str(data.get("rolloffs") or "0.20,0.25,0.35")
+
+        if isinstance(selected, str):
+            selected = [selected]
+        selected_norm = [str(x).strip().upper() for x in selected if str(x).strip()]
+        if not selected_norm:
+            return jsonify({"ok": False, "error": "Seleccioná al menos una modulación"}), 400
+
+        mod_points = []
+        for key in selected_norm:
+            if key == "BPSK":
+                mod_points.append(("BPSK", 2))
+            elif key == "QPSK":
+                mod_points.append(("QPSK", 4))
+            elif key == "8PSK":
+                mod_points.append(("8-PSK", 8))
+            elif key == "16PSK":
+                mod_points.append(("16-PSK", 16))
+            else:
+                return jsonify({"ok": False, "error": f"Modulación no soportada: {key}"}), 400
+
+        rolloffs = []
+        for token in rolloffs_raw.split(","):
+            t = token.strip().replace(";", "")
+            if not t:
+                continue
+            try:
+                rv = float(t)
+            except Exception:
+                return jsonify({"ok": False, "error": f"Valor de roll-off inválido: {t}"}), 400
+            if rv < 0.0 or rv > 1.0:
+                return jsonify({"ok": False, "error": f"El roll-off debe estar en [0,1]: {rv}"}), 400
+            rolloffs.append(rv)
+        if not rolloffs:
+            return jsonify({"ok": False, "error": "Ingresá al menos un valor de roll-off"}), 400
+        rolloffs = sorted(set(rolloffs))
+
+        import numpy as _np
+        import matplotlib.pyplot as _plt
+
+        out_dir = _ts_dir(Path(base_out))
+        fig_path = out_dir / "efficiency_plane.png"
+        cfg_path = out_dir / "efficiency_plane_params.json"
+
+        # Curva límite de Shannon: Eb/N0_min = (2^eta - 1)/eta
+        eta = _np.linspace(0.05, 8.0, 700)  # bit/s/Hz (convención baseband usada en el proyecto)
+        ebn0_min_lin = (_np.power(2.0, eta) - 1.0) / eta
+        ebn0_min_db = 10.0 * _np.log10(_np.maximum(ebn0_min_lin, 1e-18))
+
+        _plt.figure(figsize=(9.8, 6.2))
+        _plt.plot(ebn0_min_db, eta, color="#111827", lw=2.2, label="Límite de Shannon (R=C)")
+        _plt.axvline(-1.59, color="#6b7280", ls=":", lw=1.2, label="Límite -1.59 dB")
+
+        color_map = {"BPSK": "#1d4ed8", "QPSK": "#7c3aed", "8-PSK": "#16a34a", "16-PSK": "#dc2626"}
+        marker_map = {"BPSK": "o", "QPSK": "s", "8-PSK": "^", "16-PSK": "D"}
+
+        for mod_label, M in mod_points:
+            k = _np.log2(float(M))
+            xs = []
+            ys = []
+            labels = []
+            for r in rolloffs:
+                # Eficiencia baseband coherente con el informe del usuario:
+                # eta = 2*log2(M)/(1+r)
+                eta_pt = (2.0 * k) / (1.0 + float(r))
+                eb_lin_pt = (_np.power(2.0, eta_pt) - 1.0) / eta_pt
+                eb_db_pt = 10.0 * _np.log10(max(eb_lin_pt, 1e-18))
+                xs.append(eb_db_pt)
+                ys.append(eta_pt)
+                labels.append(f"r={r:.2f}")
+
+            c = color_map.get(mod_label, "#0f172a")
+            m = marker_map.get(mod_label, "o")
+            _plt.plot(xs, ys, "-", color=c, lw=1.4, alpha=0.95)
+            _plt.scatter(xs, ys, s=44, color=c, marker=m, label=f"{mod_label} (η ideal)")
+            for xpt, ypt, lr in zip(xs, ys, labels):
+                _plt.annotate(lr, (xpt, ypt), textcoords="offset points", xytext=(4, 5), fontsize=8, color=c)
+
+        _plt.grid(True, alpha=0.28)
+        _plt.xlabel("Eb/N0 [dB]")
+        _plt.ylabel("Eficiencia espectral η [bit/s/Hz]")
+        _plt.title("Plano eficiencia–ancho de banda (Shannon + puntos por modulación y roll-off)")
+        _plt.xlim(-2.0, 25.0)
+        _plt.ylim(0.0, 8.5)
+        _plt.legend(loc="lower right", fontsize=9)
+        _plt.tight_layout()
+        _plt.savefig(fig_path, dpi=160)
+        _plt.close()
+
+        _write_json(
+            cfg_path,
+            {
+                "modulations": [m for m, _ in mod_points],
+                "rolloffs": rolloffs,
+                "efficiency_formula": "eta = 2*log2(M)/(1+r)",
+                "shannon_boundary": "EbN0_min = (2^eta - 1)/eta",
+            },
+        )
+
+        try:
+            fig_rel = str(fig_path.relative_to(ROOT))
+            out_rel = str(out_dir.relative_to(ROOT))
+        except Exception:
+            fig_rel = str(fig_path)
+            out_rel = str(out_dir)
+
+        return jsonify(
+            {
+                "ok": True,
+                "out_dir": out_rel,
+                "plot_path": fig_rel,
+                "plot_name": fig_path.name,
+            }
+        )
 
     @app.get("/api/lab3/status")
     def api_lab3_status():

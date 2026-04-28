@@ -48,30 +48,64 @@
               Abrir interactivo
             </button>
           {% endif %}
+          {% if f == 'A_signal_quantized_compare_uniform.png' and signal_compare_csv_uniform %}
+            <button class="btn secondary" type="button" style="margin-top:8px;"
+                    onclick="document.getElementById('signalCompareInteractiveUniform')?.scrollIntoView({behavior:'smooth', block:'center'});">
+              Abrir interactivo (Uniforme)
+            </button>
+          {% endif %}
+          {% if f == 'A_signal_quantized_compare_alaw.png' and signal_compare_csv_alaw %}
+            <button class="btn secondary" type="button" style="margin-top:8px;"
+                    onclick="document.getElementById('signalCompareInteractiveAlaw')?.scrollIntoView({behavior:'smooth', block:'center'});">
+              Abrir interactivo (A-law)
+            </button>
+          {% endif %}
         </div>
       {% endfor %}
     </div>
   {% endif %}
-  {% if low_level_csv %}
+  {% if low_level_csv or signal_compare_csv_uniform or signal_compare_csv_alaw %}
     <h3>Vista interactiva (tramo de baja amplitud)</h3>
-    <div class="card" style="padding:12px;">
-      <div class="muted" style="margin-bottom:8px;">
-        Arrastrá para panear, rueda/trackpad para zoom y doble clic para reset.
+    {% if low_level_csv %}
+      <div class="card" style="padding:12px; margin-bottom: 12px;">
+        <div class="muted" style="margin-bottom:8px;">
+          Arrastrá para panear, rueda/trackpad para zoom y doble clic para reset.
+        </div>
+        <div id="lowLevelInteractive" style="width:100%; height:460px;"></div>
       </div>
-      <div id="lowLevelInteractive" style="width:100%; height:460px;"></div>
-    </div>
+    {% endif %}
+    {% if signal_compare_csv_uniform %}
+      <div class="card" style="padding:12px; margin-bottom: 12px;">
+        <div class="muted" style="margin-bottom:8px;">
+          Original vs reconstruida (uniforme): zoom/pan con ejes reales.
+        </div>
+        <div id="signalCompareInteractiveUniform" style="width:100%; height:420px;"></div>
+      </div>
+    {% endif %}
+    {% if signal_compare_csv_alaw %}
+      <div class="card" style="padding:12px;">
+        <div class="muted" style="margin-bottom:8px;">
+          Original vs reconstruida (A-law): zoom/pan con ejes reales.
+        </div>
+        <div id="signalCompareInteractiveAlaw" style="width:100%; height:420px;"></div>
+      </div>
+    {% endif %}
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
     <script>
       (async function(){
-        const holder = document.getElementById('lowLevelInteractive');
-        if (!holder || typeof Plotly === 'undefined') return;
-        try {
-          const p = {{ low_level_csv|tojson }};
-          const url = "{{ url_for('api_files') }}?path=" + encodeURIComponent(p);
+        if (typeof Plotly === 'undefined') return;
+
+        async function loadCsv(path) {
+          const url = "{{ url_for('api_files') }}?path=" + encodeURIComponent(path);
           const res = await fetch(url);
           if (!res.ok) throw new Error('No se pudo cargar CSV interactivo');
-          const txt = await res.text();
-          const lines = txt.trim().split(/\r?\n/);
+          return (await res.text()).trim().split(/\r?\n/);
+        }
+
+        async function renderLowLevel(holderId, csvPath) {
+          const holder = document.getElementById(holderId);
+          if (!holder || !csvPath) return;
+          const lines = await loadCsv(csvPath);
           if (lines.length < 2) throw new Error('CSV sin datos');
           const t = [], yo = [], yu = [], ya = [];
           for (let i = 1; i < lines.length; i++) {
@@ -83,27 +117,9 @@
             ya.push(Number(c[3]));
           }
           const traces = [
-            {
-              x: t,
-              y: yo,
-              mode: 'lines',
-              name: '[1] Original',
-              line: { width: 2.2, color: '#1f77b4', dash: 'solid' }
-            },
-            {
-              x: t,
-              y: yu,
-              mode: 'lines',
-              name: '[2] Uniforme',
-              line: { width: 1.8, color: '#ff7f0e', shape: 'hv', dash: 'dot' }
-            },
-            {
-              x: t,
-              y: ya,
-              mode: 'lines',
-              name: '[3] A-law',
-              line: { width: 1.8, color: '#2ca02c', dash: 'dash' }
-            },
+            { x: t, y: yo, mode: 'lines', name: '[1] Original', line: { width: 2.2, color: '#1f77b4', dash: 'solid' } },
+            { x: t, y: yu, mode: 'lines', name: '[2] Uniforme', line: { width: 1.8, color: '#ff7f0e', shape: 'hv', dash: 'dot' } },
+            { x: t, y: ya, mode: 'lines', name: '[3] A-law', line: { width: 1.8, color: '#2ca02c', dash: 'dash' } },
           ];
           const layout = {
             title: { text: 'Fuente A: comparación interactiva (baja amplitud)' },
@@ -120,8 +136,52 @@
             modeBarButtonsToRemove: ['select2d', 'lasso2d', 'autoScale2d']
           };
           Plotly.newPlot(holder, traces, layout, config);
+        }
+
+        async function renderSignalCompare(holderId, csvPath, label) {
+          const holder = document.getElementById(holderId);
+          if (!holder || !csvPath) return;
+          const lines = await loadCsv(csvPath);
+          if (lines.length < 2) throw new Error('CSV sin datos');
+          const t = [], yo = [], yr = [];
+          for (let i = 1; i < lines.length; i++) {
+            const c = lines[i].split(',');
+            if (c.length < 3) continue;
+            t.push(Number(c[0]));
+            yo.push(Number(c[1]));
+            yr.push(Number(c[2]));
+          }
+          const traces = [
+            { x: t, y: yo, mode: 'lines', name: '[1] Original', line: { width: 2.0, color: '#1f77b4' } },
+            { x: t, y: yr, mode: 'lines', name: '[2] Reconstruida', line: { width: 1.8, color: '#ff7f0e', shape: 'hv' } },
+          ];
+          const layout = {
+            title: { text: `Fuente A: original vs reconstruida (${label})` },
+            xaxis: { title: 'Tiempo [s]', zeroline: false },
+            yaxis: { title: 'Amplitud', zeroline: true },
+            legend: { orientation: 'h', y: -0.2, title: { text: 'Curvas (ID numérico)' } },
+            margin: { l: 70, r: 25, t: 50, b: 70 },
+            dragmode: 'pan',
+          };
+          const config = {
+            responsive: true,
+            displaylogo: false,
+            scrollZoom: true,
+            modeBarButtonsToRemove: ['select2d', 'lasso2d', 'autoScale2d']
+          };
+          Plotly.newPlot(holder, traces, layout, config);
+        }
+
+        try {
+          await renderLowLevel('lowLevelInteractive', {{ low_level_csv|tojson }});
+          await renderSignalCompare('signalCompareInteractiveUniform', {{ signal_compare_csv_uniform|tojson }}, 'uniforme');
+          await renderSignalCompare('signalCompareInteractiveAlaw', {{ signal_compare_csv_alaw|tojson }}, 'A-law');
         } catch (e) {
-          holder.innerHTML = '<div class="flash warning">No se pudo cargar la vista interactiva.</div>';
+          const targets = ['lowLevelInteractive', 'signalCompareInteractiveUniform', 'signalCompareInteractiveAlaw'];
+          targets.forEach(id => {
+            const holder = document.getElementById(id);
+            if (holder) holder.innerHTML = '<div class="flash warning">No se pudo cargar la vista interactiva.</div>';
+          });
         }
       })();
     </script>

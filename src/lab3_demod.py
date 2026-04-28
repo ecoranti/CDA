@@ -915,7 +915,14 @@ def _run_ber_curve(
         )
 
     n_theory = max(2, int(theory_points))
-    ebn0_fine = np.linspace(ebn0_start, ebn0_end, n_theory)
+    # Si hay un solo punto de Eb/N0, abrir una ventana local para poder ver la curva teórica.
+    if np.isclose(float(ebn0_end), float(ebn0_start)):
+        eb_plot_min = float(ebn0_start) - 1.5
+        eb_plot_max = float(ebn0_end) + 1.5
+    else:
+        eb_plot_min = float(min(ebn0_start, ebn0_end))
+        eb_plot_max = float(max(ebn0_start, ebn0_end))
+    ebn0_fine = np.linspace(eb_plot_min, eb_plot_max, n_theory)
     ber_theory = theoretical_ber_mpsk(ebn0_fine, modulation=mod, m_order=m_order)
     mod_lbl = _mod_label(mod, m_order=m_order)
     x = np.array(results_ebn0, dtype=np.float64)
@@ -942,6 +949,19 @@ def _run_ber_curve(
         zorder=3,
         label=f"Simulada media ({mod}, N={trials})",
     )
+    # Referencia puntual teórica exactamente en los mismos Eb/N0 de simulación.
+    y_theo_pts = theoretical_ber_mpsk(x, modulation=mod, m_order=m_order)
+    plt.semilogy(
+        x,
+        y_theo_pts,
+        linestyle="none",
+        marker="x",
+        markersize=6.0,
+        markeredgewidth=1.2,
+        color="black",
+        zorder=4,
+        label="Teórica @ puntos simulados",
+    )
     if trials > 1:
         y_low = np.maximum(y - y_ci, 1e-8)
         y_high = np.maximum(y + y_ci, 1e-8)
@@ -951,8 +971,23 @@ def _run_ber_curve(
     plt.xlabel("Eb/N0 [dB]")
     plt.ylabel("BER (Bit Error Rate)")
     plt.title(f"Curva BER vs Eb/N0 - {mod}")
+    # Autoescala robusta en Y (log): evita que el punto quede pegado al borde superior.
+    y_all = np.concatenate([ber_theory, y, y_theo_pts])
+    y_all = y_all[np.isfinite(y_all) & (y_all > 0)]
+    if y_all.size:
+        ymin_data = float(np.min(y_all))
+        ymax_data = float(np.max(y_all))
+        # margen de media década hacia abajo y arriba
+        y_min_plot = 10 ** np.floor(np.log10(ymin_data) - 0.5)
+        y_max_plot = 10 ** np.ceil(np.log10(ymax_data) + 0.5)
+        y_min_plot = max(1e-8, y_min_plot)
+        y_max_plot = min(1.0, y_max_plot)
+        if y_max_plot <= y_min_plot:
+            y_max_plot = min(1.0, y_min_plot * 10.0)
+        plt.ylim(y_min_plot, y_max_plot)
+    # En X, usar rango real del gráfico (expandido en single-point)
+    plt.xlim(eb_plot_min, eb_plot_max)
     plt.legend()
-    plt.ylim(bottom=1e-6)
     plot_path = out_dir / "ber_curve.png"
     plt.tight_layout()
     plt.savefig(plot_path, dpi=140)

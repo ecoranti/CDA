@@ -165,6 +165,7 @@ def save_signal_quantized_compare(
     title: str,
     fname: str,
     max_ms: float = 40.0,
+    data_csv: Optional[str] = None,
 ):
     """Compara un tramo corto con actividad real de la señal y su reconstrucción."""
     x = np.asarray(x, dtype=np.float32)
@@ -194,6 +195,24 @@ def save_signal_quantized_compare(
     plt.tight_layout()
     plt.savefig(fname, dpi=140)
     plt.close()
+
+    # Datos para vista interactiva (zoom/pan con ejes reales en UI).
+    if data_csv:
+        try:
+            data = np.column_stack([
+                t,
+                x[start:stop],
+                xhat[start:stop],
+            ])
+            np.savetxt(
+                data_csv,
+                data,
+                delimiter=",",
+                header="t_s,original,reconstruida",
+                comments="",
+            )
+        except Exception:
+            pass
 
 def save_quantizer_characteristic(
     x_in: np.ndarray,
