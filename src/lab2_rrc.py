@@ -715,65 +715,162 @@ def plot_two_symbol_rrc_contributions(symbols: np.ndarray, sps: int, taps: np.nd
     )
 
     if has_q:
-        fig, axs = plt.subplots(3, 1, figsize=(8.4, 7.2), sharex=True, gridspec_kw={"height_ratios": [1, 3, 3]})
+        fig, axs = plt.subplots(4, 1, figsize=(8.4, 8.6), sharex=True, gridspec_kw={"height_ratios": [1, 1, 3, 3]})
 
-        axs[0].stem([0, 1], [s1.real, s2.real], basefmt=" ", linefmt="C0-", markerfmt="C0o", label="I")
-        axs[0].stem([0, 1], [s1.imag, s2.imag], basefmt=" ", linefmt="C4-", markerfmt="C4s", label="Q")
+        t_h = (np.arange(taps.size) - (taps.size - 1) / 2) / float(sps)
+        axs[0].plot(t_h, taps, color="C2", lw=1.8)
         axs[0].axhline(0, color="gray", lw=0.6)
-        axs[0].axvline(0, color="gray", lw=0.5, alpha=0.5)
-        axs[0].axvline(1, color="gray", lw=0.5, alpha=0.5)
         axs[0].grid(True, alpha=0.25)
-        axs[0].set_ylabel("a[m]")
-        axs[0].set_title("Dos simbolos consecutivos y sus contribuciones tras el RRC")
-        axs[0].legend()
+        axs[0].set_ylabel("h[n]")
+        axs[0].set_title("Filtro RRC y senal conformada (2 simbolos)")
 
-        axs[1].plot(t_common, c1.real, label="Simbolo 1 (I)", color="C0", lw=1.8)
-        axs[1].plot(t_common, c2.real, label="Simbolo 2 (I)", color="C1", lw=1.8)
-        axs[1].plot(t_common, cs.real, label="Suma (I)", color="C3", lw=2.1)
+        axs[1].stem([0, 1], [s1.real, s2.real], basefmt=" ", linefmt="C0-", markerfmt="C0o", label="I")
+        axs[1].stem([0, 1], [s1.imag, s2.imag], basefmt=" ", linefmt="C4-", markerfmt="C4s", label="Q")
         axs[1].axhline(0, color="gray", lw=0.6)
         axs[1].axvline(0, color="gray", lw=0.5, alpha=0.5)
         axs[1].axvline(1, color="gray", lw=0.5, alpha=0.5)
         axs[1].grid(True, alpha=0.25)
-        axs[1].set_ylabel("Amplitud")
+        axs[1].set_ylabel("a[m]")
         axs[1].legend()
 
-        axs[2].plot(t_common, c1.imag, label="Simbolo 1 (Q)", color="C4", lw=1.8)
-        axs[2].plot(t_common, c2.imag, label="Simbolo 2 (Q)", color="C5", lw=1.8)
-        axs[2].plot(t_common, cs.imag, label="Suma (Q)", color="C6", lw=2.1)
+        axs[2].plot(t_common, c1.real, label="Simbolo 1 (I)", color="C0", lw=1.8, zorder=2)
+        # Dibujar S2(I) por encima de la suma para que se vea cuando coinciden (p.ej., S1(I)=0).
+        axs[2].plot(t_common, c2.real, label="Simbolo 2 (I)", color="C1", lw=0.9, ls="--", zorder=5)
+        axs[2].plot(t_common, cs.real, label="Suma (I)", color="C3", lw=2.0, alpha=0.9, zorder=3)
         axs[2].axhline(0, color="gray", lw=0.6)
         axs[2].axvline(0, color="gray", lw=0.5, alpha=0.5)
         axs[2].axvline(1, color="gray", lw=0.5, alpha=0.5)
         axs[2].grid(True, alpha=0.25)
-        axs[2].set_xlabel("Tiempo [simbolos]")
         axs[2].set_ylabel("Amplitud")
         axs[2].legend()
-        axs[2].set_xlim(-4, 5)
-    else:
-        fig, axs = plt.subplots(2, 1, figsize=(8.4, 5.8), sharex=True, gridspec_kw={"height_ratios": [1, 4]})
-        axs[0].stem([0, 1], [s1.real, s2.real], basefmt=" ", linefmt="0.4", markerfmt="ko")
-        axs[0].axhline(0, color="gray", lw=0.6)
-        axs[0].axvline(0, color="gray", lw=0.5, alpha=0.5)
-        axs[0].axvline(1, color="gray", lw=0.5, alpha=0.5)
-        axs[0].grid(True, alpha=0.25)
-        axs[0].set_ylabel("a[m]")
-        axs[0].set_title("Dos simbolos consecutivos y sus contribuciones tras el RRC")
 
-        axs[1].plot(t_common, c1.real, label="Pulso centrado en 0Ts", color="C0", lw=1.8)
-        axs[1].plot(t_common, c2.real, label="Pulso centrado en 1Ts", color="C1", lw=1.8)
-        axs[1].plot(t_common, cs.real, label="Suma transmitida", color="C3", lw=2.1)
+        axs[3].plot(t_common, c1.imag, label="Simbolo 1 (Q)", color="C4", lw=1.8)
+        axs[3].plot(t_common, c2.imag, label="Simbolo 2 (Q)", color="C5", lw=1.8)
+        axs[3].plot(t_common, cs.imag, label="Suma (Q)", color="C6", lw=2.1)
+        axs[3].axhline(0, color="gray", lw=0.6)
+        axs[3].axvline(0, color="gray", lw=0.5, alpha=0.5)
+        axs[3].axvline(1, color="gray", lw=0.5, alpha=0.5)
+        axs[3].grid(True, alpha=0.25)
+        axs[3].set_xlabel("Tiempo [simbolos]")
+        axs[3].set_ylabel("Amplitud")
+        axs[3].legend()
+        axs[3].set_xlim(-4, 5)
+    else:
+        fig, axs = plt.subplots(3, 1, figsize=(8.4, 6.8), sharex=True, gridspec_kw={"height_ratios": [1, 1, 4]})
+        t_h = (np.arange(taps.size) - (taps.size - 1) / 2) / float(sps)
+        axs[0].plot(t_h, taps, color="C2", lw=1.8)
+        axs[0].axhline(0, color="gray", lw=0.6)
+        axs[0].grid(True, alpha=0.25)
+        axs[0].set_ylabel("h[n]")
+        axs[0].set_title("Filtro RRC y senal conformada (2 simbolos)")
+
+        axs[1].stem([0, 1], [s1.real, s2.real], basefmt=" ", linefmt="0.4", markerfmt="ko")
         axs[1].axhline(0, color="gray", lw=0.6)
         axs[1].axvline(0, color="gray", lw=0.5, alpha=0.5)
         axs[1].axvline(1, color="gray", lw=0.5, alpha=0.5)
-        axs[1].annotate("centro simbolo 1", xy=(0, 0.02), xytext=(-1.8, 0.28), arrowprops=dict(arrowstyle="->", lw=0.8), fontsize=9)
-        axs[1].annotate("centro simbolo 2", xy=(1, 0.02), xytext=(1.8, 0.28), arrowprops=dict(arrowstyle="->", lw=0.8), fontsize=9)
         axs[1].grid(True, alpha=0.25)
-        axs[1].set_xlim(-4, 5)
-        axs[1].set_xlabel("Tiempo [simbolos]")
-        axs[1].set_ylabel("Amplitud")
-        axs[1].legend()
+        axs[1].set_ylabel("a[m]")
+
+        axs[2].plot(t_common, c1.real, label="Pulso centrado en 0Ts", color="C0", lw=1.8)
+        axs[2].plot(t_common, c2.real, label="Pulso centrado en 1Ts", color="C1", lw=1.8)
+        axs[2].plot(t_common, cs.real, label="Suma transmitida", color="C3", lw=2.1)
+        axs[2].axhline(0, color="gray", lw=0.6)
+        axs[2].axvline(0, color="gray", lw=0.5, alpha=0.5)
+        axs[2].axvline(1, color="gray", lw=0.5, alpha=0.5)
+        axs[2].annotate("centro simbolo 1", xy=(0, 0.02), xytext=(-1.8, 0.28), arrowprops=dict(arrowstyle="->", lw=0.8), fontsize=9)
+        axs[2].annotate("centro simbolo 2", xy=(1, 0.02), xytext=(1.8, 0.28), arrowprops=dict(arrowstyle="->", lw=0.8), fontsize=9)
+        axs[2].grid(True, alpha=0.25)
+        axs[2].set_xlim(-4, 5)
+        axs[2].set_xlabel("Tiempo [simbolos]")
+        axs[2].set_ylabel("Amplitud")
+        axs[2].legend()
     plt.tight_layout()
     plt.savefig(out_path, dpi=140)
     plt.close()
+
+
+def plot_two_symbol_rrc_contributions_split(
+    symbols: np.ndarray, sps: int, taps: np.ndarray, out_i_path: str, out_q_path: str
+) -> None:
+    """Genera dos figuras separadas (rama I y rama Q) para evitar una imagen única muy alta."""
+    sym = np.asarray(symbols).ravel()
+    if sym.size < 2:
+        return
+    s1 = np.complex128(sym[0])
+    s2 = np.complex128(sym[1])
+    shift = int(sps)
+    L = int(taps.size + shift)
+    base = np.arange(L)
+    t_common = (base - (taps.size - 1) / 2) / float(sps)
+    t_h = (np.arange(taps.size) - (taps.size - 1) / 2) / float(sps)
+
+    c1 = np.zeros(L, dtype=np.complex128)
+    c2 = np.zeros(L, dtype=np.complex128)
+    c1[:taps.size] = s1 * taps.astype(np.complex128)
+    c2[shift:shift + taps.size] = s2 * taps.astype(np.complex128)
+    cs = c1 + c2
+
+    # Figura rama I
+    fig_i, axs_i = plt.subplots(3, 1, figsize=(8.4, 6.8), sharex=True, gridspec_kw={"height_ratios": [1, 1, 4]})
+    axs_i[0].plot(t_h, taps, color="C2", lw=1.8)
+    axs_i[0].axhline(0, color="gray", lw=0.6)
+    axs_i[0].grid(True, alpha=0.25)
+    axs_i[0].set_ylabel("h[n]")
+    axs_i[0].set_title("Filtro RRC y contribuciones en rama I (2 simbolos)")
+
+    axs_i[1].stem([0, 1], [s1.real, s2.real], basefmt=" ", linefmt="C0-", markerfmt="C0o", label="I")
+    axs_i[1].axhline(0, color="gray", lw=0.6)
+    axs_i[1].axvline(0, color="gray", lw=0.5, alpha=0.5)
+    axs_i[1].axvline(1, color="gray", lw=0.5, alpha=0.5)
+    axs_i[1].grid(True, alpha=0.25)
+    axs_i[1].set_ylabel("a_I[m]")
+    axs_i[1].legend()
+
+    axs_i[2].plot(t_common, c1.real, label="Simbolo 1 (I)", color="C0", lw=1.8, zorder=2)
+    axs_i[2].plot(t_common, c2.real, label="Simbolo 2 (I)", color="C1", lw=0.9, ls="--", zorder=5)
+    axs_i[2].plot(t_common, cs.real, label="Suma (I)", color="C3", lw=2.0, alpha=0.9, zorder=3)
+    axs_i[2].axhline(0, color="gray", lw=0.6)
+    axs_i[2].axvline(0, color="gray", lw=0.5, alpha=0.5)
+    axs_i[2].axvline(1, color="gray", lw=0.5, alpha=0.5)
+    axs_i[2].grid(True, alpha=0.25)
+    axs_i[2].set_xlim(-4, 5)
+    axs_i[2].set_xlabel("Tiempo [simbolos]")
+    axs_i[2].set_ylabel("Amplitud")
+    axs_i[2].legend()
+    fig_i.tight_layout()
+    fig_i.savefig(out_i_path, dpi=140)
+    plt.close(fig_i)
+
+    # Figura rama Q (si no hay componente Q, se deja igualmente para consistencia visual)
+    fig_q, axs_q = plt.subplots(3, 1, figsize=(8.4, 6.8), sharex=True, gridspec_kw={"height_ratios": [1, 1, 4]})
+    axs_q[0].plot(t_h, taps, color="C2", lw=1.8)
+    axs_q[0].axhline(0, color="gray", lw=0.6)
+    axs_q[0].grid(True, alpha=0.25)
+    axs_q[0].set_ylabel("h[n]")
+    axs_q[0].set_title("Filtro RRC y contribuciones en rama Q (2 simbolos)")
+
+    axs_q[1].stem([0, 1], [s1.imag, s2.imag], basefmt=" ", linefmt="C4-", markerfmt="C4s", label="Q")
+    axs_q[1].axhline(0, color="gray", lw=0.6)
+    axs_q[1].axvline(0, color="gray", lw=0.5, alpha=0.5)
+    axs_q[1].axvline(1, color="gray", lw=0.5, alpha=0.5)
+    axs_q[1].grid(True, alpha=0.25)
+    axs_q[1].set_ylabel("a_Q[m]")
+    axs_q[1].legend()
+
+    axs_q[2].plot(t_common, c1.imag, label="Simbolo 1 (Q)", color="C4", lw=1.8)
+    axs_q[2].plot(t_common, c2.imag, label="Simbolo 2 (Q)", color="C5", lw=1.8)
+    axs_q[2].plot(t_common, cs.imag, label="Suma (Q)", color="C6", lw=2.1)
+    axs_q[2].axhline(0, color="gray", lw=0.6)
+    axs_q[2].axvline(0, color="gray", lw=0.5, alpha=0.5)
+    axs_q[2].axvline(1, color="gray", lw=0.5, alpha=0.5)
+    axs_q[2].grid(True, alpha=0.25)
+    axs_q[2].set_xlim(-4, 5)
+    axs_q[2].set_xlabel("Tiempo [simbolos]")
+    axs_q[2].set_ylabel("Amplitud")
+    axs_q[2].legend()
+    fig_q.tight_layout()
+    fig_q.savefig(out_q_path, dpi=140)
+    plt.close(fig_q)
 
 
 def _isi_max_db(alpha: float, sps: int, span: int) -> float:
@@ -874,6 +971,8 @@ def run_lab2(params: Lab2Params, bits: np.ndarray | None = None) -> Dict[str, st
         "rrc_discrete_upsampling_png": os.path.join(params.out_dir, "rrc_discrete_upsampling.png"),
         "rrc_discrete_shaping_png": os.path.join(params.out_dir, "rrc_discrete_shaping.png"),
         "rrc_two_symbols_png": os.path.join(params.out_dir, "rrc_two_symbols.png"),
+        "rrc_two_symbols_i_png": os.path.join(params.out_dir, "rrc_two_symbols_i.png"),
+        "rrc_two_symbols_q_png": os.path.join(params.out_dir, "rrc_two_symbols_q.png"),
         "isi_vs_sps_png": os.path.join(params.out_dir, "isi_vs_sps.png"),
     }
     # Guardar parámetros (si se pasaron bits explícitos, reflejar su longitud)
@@ -917,6 +1016,16 @@ def run_lab2(params: Lab2Params, bits: np.ndarray | None = None) -> Dict[str, st
         pass
     try:
         plot_two_symbol_rrc_contributions(syms, params.sps, taps, paths["rrc_two_symbols_png"])
+    except Exception:
+        pass
+    try:
+        plot_two_symbol_rrc_contributions_split(
+            syms,
+            params.sps,
+            taps,
+            paths["rrc_two_symbols_i_png"],
+            paths["rrc_two_symbols_q_png"],
+        )
     except Exception:
         pass
     try:

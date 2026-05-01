@@ -382,7 +382,9 @@
     if (paths['l1_bits_hist']) html += `<div><img src="/api/files?path=${paths['l1_bits_hist']}&v=${bust}"/><div class="muted">l1_bits_hist.png</div></div>`;
     if (paths['rrc_discrete_upsampling_png']) html += `<div><img src="/api/files?path=${paths['rrc_discrete_upsampling_png']}&v=${bust}"/><div class="muted">rrc_discrete_upsampling.png</div></div>`;
     if (paths['rrc_discrete_shaping_png']) html += `<div><img src="/api/files?path=${paths['rrc_discrete_shaping_png']}&v=${bust}"/><div class="muted">rrc_discrete_shaping.png</div></div>`;
-    if (paths['rrc_two_symbols_png']) html += `<div><img src="/api/files?path=${paths['rrc_two_symbols_png']}&v=${bust}"/><div class="muted">rrc_two_symbols.png</div></div>`;
+    if (paths['rrc_two_symbols_i_png']) html += `<div><img src="/api/files?path=${paths['rrc_two_symbols_i_png']}&v=${bust}"/><div class="muted">rrc_two_symbols_i.png</div></div>`;
+    if (paths['rrc_two_symbols_q_png']) html += `<div><img src="/api/files?path=${paths['rrc_two_symbols_q_png']}&v=${bust}"/><div class="muted">rrc_two_symbols_q.png</div></div>`;
+    else if (paths['rrc_two_symbols_png']) html += `<div><img src="/api/files?path=${paths['rrc_two_symbols_png']}&v=${bust}"/><div class="muted">rrc_two_symbols.png</div></div>`;
     html += '</div>';
     html += '<h4>Archivos</h4><ul>';
     if (paths['iq_bin']) html += `<li><a href="/api/files?path=${paths['iq_bin']}">iq.bin</a></li>`;
