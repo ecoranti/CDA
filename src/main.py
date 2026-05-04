@@ -6,6 +6,7 @@ from .audio_utils import (
     a_law_quantize,
     save_signal_plot,
     save_hist_amplitudes,
+    save_wav_int16_histogram,
     save_signal_quantized_compare,
     save_quantizer_characteristic,
     save_quantizer_low_level_compare,
@@ -45,6 +46,11 @@ def process_audio(
     # 2) Gráficos previos
     save_signal_plot(x, fs, "Fuente A: señal 'voz' (tiempo)", os.path.join(figdir, "A_signal_time.png"))
     save_hist_amplitudes(x, "Fuente A: histograma de amplitudes", os.path.join(figdir, "A_signal_hist.png"), bins=hist_bins)
+    save_wav_int16_histogram(
+        audio_path,
+        "Fuente A: histograma de muestras WAV en escala PCM16",
+        os.path.join(figdir, "A_wav_int16_hist.png"),
+    )
 
     rows_local = []
     xhat_uniform = sqnr_eval.eval_uniform(x, bits=n_bits)

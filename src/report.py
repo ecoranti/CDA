@@ -74,6 +74,8 @@ def write_markdown(out_dir: str):
         parts.append("\n## 1) Señal original (audio)")
         parts.append("![A_signal_time](figures/A_signal_time.png)")
         parts.append("![A_signal_hist](figures/A_signal_hist.png)")
+        if os.path.exists(os.path.join(fig, "A_wav_int16_hist.png")):
+            parts.append("![A_wav_int16_hist](figures/A_wav_int16_hist.png)")
 
         parts.append(f"\n## 2) Histogramas de bits (antes) [{quantizer_label}]")
         parts.append(f"![A_bits_before]({a_before})")
@@ -230,6 +232,10 @@ def write_pdf(out_dir: str):
     if source == "audio":
         add_img(os.path.join(figdir, "A_signal_time.png"), "Señal en el tiempo (audio)")
         add_img(os.path.join(figdir, "A_signal_hist.png"), "Histograma de amplitudes (audio)")
+        add_img(
+            os.path.join(figdir, "A_wav_int16_hist.png"),
+            "Histograma de muestras WAV en escala PCM16 (rango int16: -32768 a 32767)",
+        )
         add_img(pick("A_bits_hist_before"), f"Histogramas de bits – Audio (antes, {quantizer_label})")
         add_img(pick("A_bits_hist_scrambled"), f"Histogramas de bits – Audio (scrambling, {quantizer_label})")
         add_img(pick("A_bits_hist_compare"), "Comparativa Antes vs Scrambling – Audio")

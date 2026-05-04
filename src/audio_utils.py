@@ -158,6 +158,64 @@ def save_hist_amplitudes(x: np.ndarray, title: str, fname: str, bins: int = 50):
     plt.savefig(fname, dpi=140)
     plt.close()
 
+
+def save_wav_int16_histogram(
+    wav_path: str,
+    title: str,
+    fname: str,
+    bins: int = 220,
+):
+    """Histograma de muestras PCM16 del WAV original.
+
+    El eje X se expresa en unidades enteras int16, con rango teórico
+    [-32768, 32767]. Si el WAV no está en int16, se lleva a esa escala
+    sólo para visualización.
+    """
+    fs, x = wavfile.read(wav_path)
+    if x.ndim == 2:
+        x = x.mean(axis=1)
+
+    if x.dtype == np.int16:
+        xi = x.astype(np.int16)
+        dtype_note = "int16"
+    elif np.issubdtype(x.dtype, np.floating):
+        xi = np.round(np.clip(x, -1.0, 1.0) * 32767.0).astype(np.int16)
+        dtype_note = f"{x.dtype} → int16 (escala)"
+    elif x.dtype == np.int32:
+        # Paso consistente a escala int16 para graficar rango PCM16.
+        xi = np.round(np.clip(x.astype(np.float64) / 2147483648.0, -1.0, 1.0) * 32767.0).astype(np.int16)
+        dtype_note = "int32 → int16 (escala)"
+    else:
+        xf = x.astype(np.float64)
+        m = np.max(np.abs(xf)) + 1e-12
+        xi = np.round(np.clip(xf / m, -1.0, 1.0) * 32767.0).astype(np.int16)
+        dtype_note = f"{x.dtype} → int16 (normalizado)"
+
+    plt.figure(figsize=(7.0, 4.4))
+    plt.hist(xi, bins=bins, color="#2563eb", alpha=0.9)
+    plt.axvline(-32768, color="#b91c1c", ls="--", lw=1.0, label="min int16 = -32768")
+    plt.axvline(32767, color="#15803d", ls="--", lw=1.0, label="max int16 = 32767")
+    plt.grid(True, alpha=0.25)
+    plt.xlabel("Valor de muestra PCM16")
+    plt.ylabel("Ocurrencias")
+    plt.title(title)
+    plt.xlim(-34000, 34000)
+    plt.legend(loc="upper right", fontsize=8)
+    info = f"fs={fs} Hz | dtype origen: {dtype_note}"
+    plt.text(
+        0.01,
+        0.01,
+        info,
+        transform=plt.gca().transAxes,
+        fontsize=8,
+        va="bottom",
+        ha="left",
+        bbox=dict(facecolor="white", alpha=0.7, edgecolor="none"),
+    )
+    plt.tight_layout()
+    plt.savefig(fname, dpi=140)
+    plt.close()
+
 def save_signal_quantized_compare(
     x: np.ndarray,
     xhat: np.ndarray,
