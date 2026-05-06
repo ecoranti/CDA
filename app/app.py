@@ -41,9 +41,41 @@ def create_app() -> Flask:
 
     ROOT = Path(__file__).resolve().parent.parent
 
+    def _default_audio_path() -> str:
+        candidates = [
+            ROOT / "data/8kmono.wav",
+            ROOT / "data/prueba8k.wav",
+            ROOT / "data/monomalah.wav",
+            ROOT / "data/voice.wav",
+        ]
+        for p in candidates:
+            if p.exists():
+                return str(p)
+        return str(ROOT / "data/8kmono.wav")
+
+    def _resolve_existing_input_path(path_value: str | None, kind: str) -> str:
+        """Normaliza rutas viejas guardadas en UI/localStorage.
+
+        Si la ruta recibida no existe, cae a un archivo real del repo para no romper
+        las APIs encadenadas cuando quedó metadata vieja en el navegador.
+        """
+        if path_value:
+            p = Path(str(path_value)).expanduser()
+            if p.exists():
+                return str(p)
+            # Si viene una ruta absoluta vieja al repo, intentamos rescatar solo el nombre.
+            candidate_name = p.name
+            if candidate_name:
+                local_candidate = ROOT / "data" / candidate_name
+                if local_candidate.exists():
+                    return str(local_candidate)
+        if kind == "audio":
+            return _default_audio_path()
+        return str(ROOT / "data/sample_text.txt")
+
 
     DEFAULTS = {
-            "audio": str(ROOT / "data/voice.wav"),
+            "audio": _default_audio_path(),
             "text": str(ROOT / "data/sample_text.txt"),
             "bw_hz": 100000,
             "out_lab1": str(ROOT / "outputs_ui/lab1"),
@@ -737,8 +769,8 @@ def create_app() -> Flask:
         seed = 0
         # Lab1 params
         l1 = data.get("lab1") or {}
-        audio = l1.get("audio") or DEFAULTS["audio"]
-        text = l1.get("text") or DEFAULTS["text"]
+        audio = _resolve_existing_input_path(l1.get("audio") or DEFAULTS["audio"], "audio")
+        text = _resolve_existing_input_path(l1.get("text") or DEFAULTS["text"], "text")
         fs = int(l1.get("fs") or 16000)
         bw_hz = float(l1.get("bw_hz") or DEFAULTS["bw_hz"])
         n_bits = int(l1.get("n_bits") or 8)
@@ -752,13 +784,13 @@ def create_app() -> Flask:
         except Exception:
             l1_taps = (9, 6)
         l1_bitwidth = _parse_int_auto(l1.get("lfsr_bitwidth"), 10)
-        # Generar figuras de Formateo para encadenado (una vez por corrida)
-        formateo_dir = base_abs / "formateo"
-        formateo_payload = _generate_formateo_outputs(
-            formateo_dir, audio, text, fs, n_bits, quantizer, source,
-            l1_seed, l1_taps, l1_bitwidth, bw_hz=bw_hz
-        )
         try:
+            # Generar figuras de Formateo para encadenado (una vez por corrida)
+            formateo_dir = base_abs / "formateo"
+            formateo_payload = _generate_formateo_outputs(
+                formateo_dir, audio, text, fs, n_bits, quantizer, source,
+                l1_seed, l1_taps, l1_bitwidth, bw_hz=bw_hz
+            )
             if sps <= 0:
                 raise ValueError("sps debe ser > 0")
             if mod not in {"BPSK", "QPSK", "MPSK", "M-PSK"}:
