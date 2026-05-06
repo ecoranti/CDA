@@ -8,6 +8,10 @@ Repositorio del trabajo de **Comunicación Digital Avanzada** con una aplicació
 
 La app permite correr el sistema de punta a punta con **audio o texto**, guardar cada corrida en `outputs_ui/`, recuperar la fuente en recepción y generar informes/figuras para el trabajo.
 
+## Entrega
+
+- Informe final en PDF: [Final_CDA_EliasCoranti.pdf](Final_CDA_EliasCoranti.pdf)
+
 ---
 
 ## Qué hace el proyecto
