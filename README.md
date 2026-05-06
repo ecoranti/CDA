@@ -15,14 +15,14 @@ La app permite correr el sistema de punta a punta con **audio o texto**, guardar
 ### Lab 1 - Formateo
 - Toma una fuente de **audio** o **texto**
 - Muestrea o remuestrea
-- Cuantiza en uniforme o **A-law**
+- Cuantiza en uniforme, **A-law** o ambos
 - Convierte a bits
 - Aplica **scrambling**
-- Genera histogramas, entropía, SQNR/MSE e informe
+- Genera histogramas, entropía, SQNR/MSE, histograma PCM16 del WAV e informe
 
 ### Lab 2 - Modulación
 - Toma los bits reales de Formateo
-- Mapea a **BPSK** o **QPSK**
+- Mapea a **BPSK**, **QPSK** o **M-PSK**
 - Aplica **sobremuestreo**
 - Conforma con **RRC**
 - Guarda la señal transmitida como vector IQ en `iq.bin` / `iq_tx.bin`
@@ -122,7 +122,7 @@ Fuente -> Muestreo -> Cuantización -> Bits -> Scrambling
 
 2. **Lab 2 - Modulación**
    - usar la salida real de Formateo
-   - elegir `BPSK` o `QPSK`
+   - elegir `BPSK`, `QPSK` o `M-PSK`
    - definir `sps`, `roll-off`, `span`
    - ejecutar
 
@@ -179,14 +179,15 @@ Ahí se guardan:
 ### Lab 1
 - `bits.bin`
 - `bits_tx.bin`
-- figuras de histograma, entropía, SQNR, MSE
+- figuras de histograma, entropía, SQNR, MSE, PCM16
 - informe `.md` y `.pdf`
 
 ### Lab 2
 - `iq.bin` / `iq_tx.bin`
 - `bits.bin`, `bits_tx.bin`, `bits_from_lab1.bin`
 - `params.json`
-- `constellation.png`
+- `constellation_symbols.png`
+- `constellation_shaped.png`
 - `spectrum.png`
 - `rrc_impulse.png`
 - `eye_diagram.png`
@@ -198,6 +199,8 @@ Ahí se guardan:
 - `rx_eye.png`
 - `rx_time.png`
 - `rx_decision.png`
+- `tx_rx_constellations.png`
+- `ber_point.png`
 - `audio_rx.wav` o `text_rx.txt`
 - `audio_tx_ref.wav` o `text_tx_ref.txt`
 
@@ -263,7 +266,11 @@ La BER simulada se calcula como:
 BER = N_errores / N_bits
 ```
 
-La app también grafica la referencia teórica de BPSK/QPSK en AWGN.
+La app también grafica referencias teóricas en AWGN para:
+
+- `BPSK`
+- `QPSK`
+- `M-PSK` (por ejemplo `8-PSK` y `16-PSK`)
 
 ---
 
