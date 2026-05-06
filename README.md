@@ -10,7 +10,8 @@ La app permite correr el sistema de punta a punta con **audio o texto**, guardar
 
 ## Entrega
 
-- Informe final en PDF: [Final_CDA_EliasCoranti.pdf](Final_CDA_EliasCoranti.pdf)
+- Informe final en PDF (versión web): [Final_CDA_EliasCoranti_web.pdf](Final_CDA_EliasCoranti_web.pdf)
+- Informe final en PDF (original): [Final_CDA_EliasCoranti.pdf](Final_CDA_EliasCoranti.pdf)
 
 ---
 
