@@ -168,6 +168,45 @@ def _symbol_group_labels(bits: np.ndarray, mod: str, m_order: int, count: int) -
     return labels
 
 
+def _ideal_constellation(mod: str, m_order: int = 4) -> np.ndarray:
+    """Devuelve los puntos ideales de la constelación para la modulación indicada."""
+    mode = (mod or "BPSK").upper()
+    if mode == "BPSK":
+        return np.array([-1.0 + 0j, 1.0 + 0j], dtype=np.complex128)
+    if mode == "QPSK":
+        pts = np.array([1 + 1j, 1 - 1j, -1 + 1j, -1 - 1j], dtype=np.complex128) / np.sqrt(2.0)
+        return pts.astype(np.complex128)
+    if mode in {"MPSK", "M-PSK"}:
+        M = _validate_m_order(m_order)
+        idx = np.arange(M, dtype=np.float64)
+        return np.exp(1j * 2.0 * np.pi * idx / float(M)).astype(np.complex128)
+    return np.array([], dtype=np.complex128)
+
+
+def _demo_symbol_sequence(mod: str, m_order: int = 4) -> tuple[np.ndarray, list[str], str]:
+    """Secuencia canónica para ilustrar todos los símbolos válidos de la modulación."""
+    mode = (mod or "BPSK").upper()
+    if mode == "BPSK":
+        syms = np.array([-1.0 + 0j, 1.0 + 0j], dtype=np.complex128)
+        labels = ["0\n-1", "1\n+1"]
+        return syms, labels, "BPSK"
+
+    if mode == "QPSK":
+        syms = np.array([1 + 1j, 1 - 1j, -1 + 1j, -1 - 1j], dtype=np.complex128) / np.sqrt(2.0)
+        labels = ["00\n+1+j", "01\n+1-j", "10\n-1+j", "11\n-1-j"]
+        return syms.astype(np.complex128), labels, "QPSK"
+
+    if mode in {"MPSK", "M-PSK"}:
+        M = _validate_m_order(m_order)
+        idx = np.arange(M, dtype=np.int64)
+        syms = np.exp(1j * 2.0 * np.pi * idx / float(M)).astype(np.complex128)
+        k = int(np.log2(M))
+        labels = [f"{format(int(m), f'0{k}b')}\nm={int(m)}" for m in idx]
+        return syms, labels, f"M-PSK (M={M})"
+
+    return np.array([], dtype=np.complex128), [], mode
+
+
 def upsample_and_filter(symbols: np.ndarray, sps: int, taps: np.ndarray) -> np.ndarray:
     L = symbols.size
     x_up = np.zeros(L * sps, dtype=np.complex128)
@@ -670,18 +709,16 @@ def plot_rrc_discrete_chain(
     out_dir: str,
     span_symbols: int,
     m_order: int = 4,
-    max_symbols: int = 6,
+    max_symbols: int = 8,
 ) -> None:
     """Genera figuras didácticas del conformado RRC y del muestreo tras filtro acoplado."""
-    sym = np.asarray(symbols).ravel()
+    sym, group_labels, mode_label = _demo_symbol_sequence(modulation, m_order=m_order)
     if sym.size == 0:
         return
+    if max_symbols > 0:
+        sym = sym[:max_symbols]
+        group_labels = group_labels[:sym.size]
     has_q = bool(np.max(np.abs(sym.imag)) > 1e-12)
-    sym = sym[:max_symbols]
-    group_labels = _symbol_group_labels(bits, modulation, m_order, sym.size)
-    mode_label = "M-PSK" if (modulation or "").upper() in {"MPSK", "M-PSK"} else (modulation or "BPSK").upper()
-    if mode_label == "M-PSK":
-        mode_label = f"M-PSK (M={int(m_order)})"
     x_up = np.zeros(sym.size * sps, dtype=np.complex128)
     x_up[::sps] = sym.astype(np.complex128)
 
@@ -695,19 +732,38 @@ def plot_rrc_discrete_chain(
     rx_samples = rx_full[sample_idx]
 
     # 1) simbolos -> upsampling
-    plt.figure(figsize=(7.4, 5.0 if has_q else 4.0))
+    plt.figure(figsize=(8.4, 5.8 if has_q else 4.3))
     plt.subplot(2, 1, 1)
     if has_q:
+        ideal = _ideal_constellation(modulation, m_order=m_order)
+        if ideal.size:
+            plt.scatter(
+                ideal.real,
+                ideal.imag,
+                s=120,
+                facecolors="none",
+                edgecolors="0.7",
+                linewidths=1.2,
+                zorder=1,
+                label="Constelacion ideal",
+            )
         plt.plot(sym.real, sym.imag, color="0.75", lw=1.0, alpha=0.8, zorder=1)
         plt.scatter(sym.real, sym.imag, c=np.arange(sym.size), cmap="viridis", s=70, zorder=3)
         for k, (xr, xq) in enumerate(zip(sym.real, sym.imag)):
             label = group_labels[k] if k < len(group_labels) else f"k={k}"
+            dx = 8 if xr >= 0 else -44
+            dy = 8 if xq >= 0 else -26
+            if abs(xr) < 0.15:
+                dx = 10
+            if abs(xq) > 0.9:
+                dy = -2 if xq > 0 else -18
             plt.annotate(
                 f"{label}",
                 (xr, xq),
                 textcoords="offset points",
-                xytext=(6, 6),
+                xytext=(dx, dy),
                 fontsize=8,
+                ha="left" if dx >= 0 else "right",
                 bbox=dict(boxstyle="round,pad=0.18", fc="white", ec="0.8", alpha=0.9),
             )
         lim = max(1.15, 1.15 * np.max(np.abs(np.r_[sym.real, sym.imag])))
@@ -718,7 +774,9 @@ def plot_rrc_discrete_chain(
         plt.gca().set_aspect("equal", adjustable="box")
         plt.xlabel("I")
         plt.ylabel("Q")
-        plt.title(f"Primeros simbolos mapeados en constelacion ({mode_label})")
+        plt.title(
+            f"Primeros {sym.size} simbolos transmitidos sobre la constelacion ideal\n({mode_label})"
+        )
         plt.grid(True, alpha=0.25)
     else:
         plt.stem(np.arange(sym.size), sym.real, basefmt=" ", linefmt="C0-", markerfmt="C0o")
@@ -735,7 +793,7 @@ def plot_rrc_discrete_chain(
             )
         plt.ylabel("Simbolo")
         plt.xlabel("Indice simbolico k")
-        plt.title(f"Primeros simbolos mapeados ({mode_label})")
+        plt.title(f"Primeros {sym.size} simbolos mapeados ({mode_label})")
         plt.grid(True, alpha=0.25)
 
     plt.subplot(2, 1, 2)
