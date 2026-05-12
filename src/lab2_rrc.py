@@ -123,6 +123,51 @@ def map_bits_to_symbols(bits: np.ndarray, mod: str = "BPSK", m_order: int = 4) -
         raise ValueError("Modulación no soportada. Use 'BPSK', 'QPSK' o 'MPSK'.")
 
 
+def _symbol_group_labels(bits: np.ndarray, mod: str, m_order: int, count: int) -> list[str]:
+    """Devuelve etiquetas bit->simbolo para las primeras `count` posiciones."""
+    bits = np.asarray(bits).astype(np.uint8).ravel()
+    mode = (mod or "BPSK").upper()
+    labels: list[str] = []
+    if count <= 0:
+        return labels
+
+    if mode == "BPSK":
+        if bits.size < count:
+            bits = np.pad(bits, (0, count - bits.size), constant_values=0)
+        for b in bits[:count]:
+            sym = "+1" if int(b) == 1 else "-1"
+            labels.append(f"{int(b)}\n{sym}")
+        return labels
+
+    if mode == "QPSK":
+        needed = 2 * count
+        if bits.size < needed:
+            bits = np.pad(bits, (0, needed - bits.size), constant_values=0)
+        groups = bits[:needed].reshape(-1, 2)
+        for g in groups[:count]:
+            b0, b1 = int(g[0]), int(g[1])
+            i = "+1" if b0 == 0 else "-1"
+            q = "+j" if b1 == 0 else "-j"
+            labels.append(f"{b0}{b1}\n{i}{q}")
+        return labels
+
+    if mode in {"MPSK", "M-PSK"}:
+        M = _validate_m_order(m_order)
+        k = int(np.log2(M))
+        needed = k * count
+        if bits.size < needed:
+            bits = np.pad(bits, (0, needed - bits.size), constant_values=0)
+        groups = bits[:needed].reshape(-1, k)
+        powers = (1 << np.arange(k - 1, -1, -1, dtype=np.int64))
+        idx = groups.dot(powers).astype(np.int64)
+        for g, m in zip(groups[:count], idx[:count]):
+            bitstr = "".join(str(int(v)) for v in g)
+            labels.append(f"{bitstr}\nm={int(m)}")
+        return labels
+
+    return labels
+
+
 def upsample_and_filter(symbols: np.ndarray, sps: int, taps: np.ndarray) -> np.ndarray:
     L = symbols.size
     x_up = np.zeros(L * sps, dtype=np.complex128)
@@ -616,13 +661,27 @@ def plot_bits_and_iq(bits: np.ndarray, y: np.ndarray, sps: int, modulation: str,
     plt.close()
 
 
-def plot_rrc_discrete_chain(symbols: np.ndarray, sps: int, taps: np.ndarray, out_dir: str, max_symbols: int = 6) -> None:
+def plot_rrc_discrete_chain(
+    symbols: np.ndarray,
+    bits: np.ndarray,
+    modulation: str,
+    sps: int,
+    taps: np.ndarray,
+    out_dir: str,
+    span_symbols: int,
+    m_order: int = 4,
+    max_symbols: int = 6,
+) -> None:
     """Genera figuras didácticas del conformado RRC y del muestreo tras filtro acoplado."""
     sym = np.asarray(symbols).ravel()
     if sym.size == 0:
         return
     has_q = bool(np.max(np.abs(sym.imag)) > 1e-12)
     sym = sym[:max_symbols]
+    group_labels = _symbol_group_labels(bits, modulation, m_order, sym.size)
+    mode_label = "M-PSK" if (modulation or "").upper() in {"MPSK", "M-PSK"} else (modulation or "BPSK").upper()
+    if mode_label == "M-PSK":
+        mode_label = f"M-PSK (M={int(m_order)})"
     x_up = np.zeros(sym.size * sps, dtype=np.complex128)
     x_up[::sps] = sym.astype(np.complex128)
 
@@ -636,15 +695,48 @@ def plot_rrc_discrete_chain(symbols: np.ndarray, sps: int, taps: np.ndarray, out
     rx_samples = rx_full[sample_idx]
 
     # 1) simbolos -> upsampling
-    plt.figure(figsize=(7.2, 4.4 if has_q else 3.8))
+    plt.figure(figsize=(7.4, 5.0 if has_q else 4.0))
     plt.subplot(2, 1, 1)
-    plt.stem(np.arange(sym.size), sym.real, basefmt=" ", linefmt="C0-", markerfmt="C0o", label="I")
     if has_q:
-        plt.stem(np.arange(sym.size), sym.imag, basefmt=" ", linefmt="C2-", markerfmt="C2s", label="Q")
-        plt.legend()
-    plt.ylabel("Valor")
-    plt.title("Simbolos y secuencia sobremuestreada")
-    plt.grid(True, alpha=0.25)
+        plt.plot(sym.real, sym.imag, color="0.75", lw=1.0, alpha=0.8, zorder=1)
+        plt.scatter(sym.real, sym.imag, c=np.arange(sym.size), cmap="viridis", s=70, zorder=3)
+        for k, (xr, xq) in enumerate(zip(sym.real, sym.imag)):
+            label = group_labels[k] if k < len(group_labels) else f"k={k}"
+            plt.annotate(
+                f"{label}",
+                (xr, xq),
+                textcoords="offset points",
+                xytext=(6, 6),
+                fontsize=8,
+                bbox=dict(boxstyle="round,pad=0.18", fc="white", ec="0.8", alpha=0.9),
+            )
+        lim = max(1.15, 1.15 * np.max(np.abs(np.r_[sym.real, sym.imag])))
+        plt.axhline(0, color="gray", lw=0.6)
+        plt.axvline(0, color="gray", lw=0.6)
+        plt.xlim(-lim, lim)
+        plt.ylim(-lim, lim)
+        plt.gca().set_aspect("equal", adjustable="box")
+        plt.xlabel("I")
+        plt.ylabel("Q")
+        plt.title(f"Primeros simbolos mapeados en constelacion ({mode_label})")
+        plt.grid(True, alpha=0.25)
+    else:
+        plt.stem(np.arange(sym.size), sym.real, basefmt=" ", linefmt="C0-", markerfmt="C0o")
+        for k, val in enumerate(sym.real):
+            label = group_labels[k] if k < len(group_labels) else f"{val:+.0f}"
+            plt.annotate(
+                label,
+                (k, val),
+                textcoords="offset points",
+                xytext=(0, 8 if val >= 0 else -22),
+                ha="center",
+                fontsize=8,
+                bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="0.8", alpha=0.9),
+            )
+        plt.ylabel("Simbolo")
+        plt.xlabel("Indice simbolico k")
+        plt.title(f"Primeros simbolos mapeados ({mode_label})")
+        plt.grid(True, alpha=0.25)
 
     plt.subplot(2, 1, 2)
     plt.stem(np.arange(len(x_up)), x_up.real, basefmt=" ", linefmt="C1-", markerfmt="C1o", label="I")
@@ -663,20 +755,37 @@ def plot_rrc_discrete_chain(symbols: np.ndarray, sps: int, taps: np.ndarray, out
     # 2) salida del pulso conformado
     plt.figure(figsize=(7.2, 4.4 if has_q else 4.0))
     plt.subplot(2, 1, 1)
-    plt.plot(np.arange(len(taps)) / float(sps), taps, color="C2")
+    span_view = max(1, int(span_symbols))
+    half_view = span_view / 2.0
+    t_h = (np.arange(taps.size) - (taps.size - 1) / 2.0) / float(sps)
+    plt.plot(t_h, taps, color="C2")
     plt.axhline(0, color="gray", lw=0.6)
     plt.grid(True, alpha=0.25)
+    plt.xlim(-half_view, half_view)
+    plt.xlabel("Tiempo [simbolos]")
     plt.ylabel("h[n]")
-    plt.title("Filtro RRC y senal conformada")
+    plt.title(f"Filtro RRC (span={span_view} simbolos) y senal conformada")
 
     plt.subplot(2, 1, 2)
-    plt.plot(np.arange(len(tx)), tx.real, color="C3", label="I")
+    # Mostrar una ventana temporal cuya duracion coincida con el span elegido
+    # por el usuario para que la comparacion visual sea consistente.
+    center = delay_tx + (sym.size * sps - 1) / 2.0
+    half_win = span_view * sps / 2.0
+    start = max(0, int(np.floor(center - half_win)))
+    end = min(len(y_full), int(np.ceil(center + half_win)) + 1)
+    n_win = np.arange(start, end)
+    t_win = (n_win - center) / float(sps)
+
+    plt.plot(t_win, y_full[start:end].real, color="C3", label="I")
     if has_q:
-        plt.plot(np.arange(len(tx)), tx.imag, color="C4", label="Q")
+        plt.plot(t_win, y_full[start:end].imag, color="C4", label="Q")
         plt.legend()
-    for k in range(0, len(x_up), sps):
-        plt.axvline(k, color="gray", lw=0.5, alpha=0.4)
-    plt.xlabel("Indice de muestra n")
+    for k in range(sym.size):
+        t_sym = (delay_tx + k * sps - center) / float(sps)
+        if -half_view <= t_sym <= half_view:
+            plt.axvline(t_sym, color="gray", lw=0.5, alpha=0.4)
+    plt.xlim(-half_view, half_view)
+    plt.xlabel("Tiempo [simbolos]")
     plt.ylabel("y[n]")
     plt.grid(True, alpha=0.25)
     plt.tight_layout()
@@ -1011,7 +1120,16 @@ def run_lab2(params: Lab2Params, bits: np.ndarray | None = None) -> Dict[str, st
     except Exception:
         pass
     try:
-        plot_rrc_discrete_chain(syms, params.sps, taps, params.out_dir)
+        plot_rrc_discrete_chain(
+            syms,
+            bits,
+            params.modulation,
+            params.sps,
+            taps,
+            params.out_dir,
+            params.span,
+            m_order=params.m_order,
+        )
     except Exception:
         pass
     try:
